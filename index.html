@@ -29,9 +29,6 @@ table{width:100%;border-collapse:collapse;font-size:9px}th{padding:5px 4px;text-
 .alert.bad{background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15);color:var(--rd)}
 .alert.good{background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.15);color:var(--gn)}
 .camp-card{padding:12px;border-radius:10px;border:1px solid var(--bd);margin-bottom:8px;cursor:pointer;transition:all .15s}.camp-card:hover{border-color:rgba(255,255,255,0.12)}
-.prod-row{padding:10px 0;border-bottom:1px solid var(--bd)}
-.bar-wrap{height:3px;border-radius:2px;background:rgba(255,255,255,0.05);margin-top:3px;overflow:hidden}
-.bar-fill{height:100%;border-radius:2px}
 </style>
 </head>
 <body>
@@ -44,11 +41,9 @@ table{width:100%;border-collapse:collapse;font-size:9px}th{padding:5px 4px;text-
   <input id="sheetInput" class="setup-input" placeholder="https://docs.google.com/spreadsheets/d/...">
   <button id="connectBtn" class="connect-btn" onclick="handleConnect()">구글시트 연결</button>
   <div style="margin-top:24px;padding:16px;background:rgba(255,255,255,0.02);border:1px solid var(--bd);border-radius:10px;font-size:11px;color:var(--mt);line-height:1.8">
-    <b style="color:var(--tx)">시트 탭 4개</b><br>
-    <b style="color:var(--tx)">campaign</b> — SP 타겟팅 리포트 (캠페인+키워드)<br>
-    <b style="color:var(--tx)">advertised_product</b> — SP 광고 상품 리포트 (ASIN별 광고비)<br>
-    <b style="color:var(--tx)">search_terms</b> — 검색어 보고서<br>
-    <b style="color:var(--tx)">business_report</b> — 비즈니스 리포트 (트래픽/CVR)<br><br>
+    <b style="color:var(--tx)">시트 탭 5개</b><br>
+    <b style="color:var(--rd)">매일:</b> <b style="color:var(--tx)">campaign</b> (캠페인CSV) · <b style="color:var(--tx)">business_report</b> (비즈니스리포트)<br>
+    <b style="color:var(--or)">주간:</b> <b style="color:var(--tx)">targeting</b> · <b style="color:var(--tx)">search_terms</b> · <b style="color:var(--tx)">purchased_product</b><br>
     <b style="color:var(--or)">파일 → 공유 → 웹에 게시 → 게시</b>
   </div>
 </div>
@@ -63,10 +58,11 @@ table{width:100%;border-collapse:collapse;font-size:9px}th{padding:5px 4px;text-
   </div>
   <div id="lastSyncText" style="font-size:8px;color:var(--mt);text-align:right;margin-bottom:4px"></div>
   <div class="tabs" id="tabBar"></div>
-  <div id="sec-funnel" class="section"></div>
+  <div id="sec-overview" class="section"></div>
   <div id="sec-campaign" class="section"></div>
   <div id="sec-search" class="section"></div>
   <div id="sec-product" class="section"></div>
+  <div id="sec-crosssell" class="section"></div>
   <div id="sec-ai" class="section"></div>
   <div id="sec-settings" class="section"></div>
 </div>
@@ -76,534 +72,392 @@ table{width:100%;border-collapse:collapse;font-size:9px}th{padding:5px 4px;text-
 function loadSheet(id,tab){return new Promise(res=>{const cb='_c'+Math.random().toString(36).substr(2,8);const s=document.createElement('script');let d=false;
 window[cb]=function(r){d=true;delete window[cb];if(s.parentNode)s.remove();res(r&&r.status==='ok'&&r.table?gviz(r.table):null)};
 s.src=`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=responseHandler:${cb}&sheet=${encodeURIComponent(tab)}`;
-s.onerror=()=>{if(!d){d=true;delete window[cb];res(null)}};setTimeout(()=>{if(!d){d=true;delete window[cb];if(s.parentNode)s.remove();res(null)}},10000);document.head.appendChild(s)})}
+s.onerror=()=>{if(!d){d=true;delete window[cb];res(null)}};setTimeout(()=>{if(!d){d=true;delete window[cb];if(s.parentNode)s.remove();res(null)}},12000);document.head.appendChild(s)})}
 function gviz(t){if(!t||!t.cols||!t.rows)return[];const h=t.cols.map(c=>(c.label||c.id||'').trim());
 return t.rows.map(row=>{const o={};(row.c||[]).forEach((c,i)=>{if(i<h.length)o[h[i]]=c?(c.v!=null?String(c.v):''):''});return o}).filter(o=>Object.values(o).some(v=>v!==''))}
 
 // ═══ STATE ═══
-let S={sheetId:"",campaign:[],ap:[],st:[],br:[],sync:{campaign:false,advertised_product:false,search_terms:false,business_report:false},lastSync:"",tab:"funnel"};
+let S={sheetId:"",camp:[],tgt:[],st:[],br:[],pp:[],sync:{campaign:false,targeting:false,search_terms:false,business_report:false,purchased_product:false},lastSync:"",tab:"overview"};
 const LS={set(k,v){try{localStorage.setItem("sh_"+k,JSON.stringify(v))}catch(e){}},get(k,d){try{const v=localStorage.getItem("sh_"+k);return v?JSON.parse(v):d}catch(e){return d}},clear(){Object.keys(localStorage).filter(k=>k.startsWith("sh_")).forEach(k=>localStorage.removeItem(k))}};
 const pn=s=>{const n=parseFloat(String(s||0).replace(/[,$%]/g,""));return isNaN(n)?0:n};
 const sm=a=>a.reduce((x,y)=>x+y,0);const av=a=>a.length?sm(a)/a.length:0;
-function fixD(d){const m=String(d).match(/Date\((\d+),(\d+),(\d+)\)/);return m?`${m[1]}-${String(+m[2]+1).padStart(2,'0')}-${m[3].padStart(2,'0')}`:d}
+function fixD(d){const m=String(d).match(/Date\((\d+),(\d+),(\d+)\)/);return m?`${m[1]}-${String(+m[2]+1).padStart(2,'0')}-${m[3].padStart(2,'0')}`:String(d).slice(0,10)}
 
-// ═══ PARSERS ═══
-// campaign tab: now captures Campaign Name
-// campaign tab: SP Targeting Report (Daily)
-// Actual Amazon columns: Date, Portfolio name, Campaign Name, Ad Group Name, Targeting, Match Type, Customer Search Term, State, Suggested bid..., Bid, Impressions, Top-of-search impression share, Clicks, CTR, Total cost, CPC, Purchases, Sales, ACOS, ROAS
-function parseC(rows){return rows.map(r=>({date:fixD(r["Date"]||""),
-  camp:r["Campaign Name"]||r["Campaign"]||"(미지정)",
-  purpose:r["Purpose"]||r["목적"]||"",
-  kw:r["Targeting"]||r["Keyword"]||"",
-  mt:r["Match Type"]||r["Target match type"]||"",
-  bid:pn(r["Bid (USD)"]||r["Bid"]),
-  sug:pn(r["Suggested bid (median)(USD)"]||r["Suggested Bid"]),
-  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),
-  tos:r["Top-of-search impression share"]||"",
-  cost:pn(r["Total cost (USD)"]||r["Spend"]),
-  pur:pn(r["Purchases"]||r["7 Day Total Orders"]||r["Orders"]),
-  sales:pn(r["Sales (USD)"]||r["7 Day Total Sales"]||r["Sales"]),
-  status:r["State"]||r["Status"]||""})).filter(r=>r.kw)}
+// ═══ PARSERS (matching actual Amazon report headers) ═══
+// campaign tab: from Campaign CSV (State, Campaign name, Status, Type, ...) + Date + Purpose manual
+function parseCamp(rows){return rows.map(r=>({
+  date:fixD(r["Date"]||""),purpose:r["Purpose"]||r["목적"]||"",
+  name:r["Campaign name"]||r["Campaign Name"]||"",
+  status:r["Status"]||"",type:r["Type"]||"",
+  budget:r["Campaign budget amount"]||r["Campaign budget amount (converted)"]||"",
+  timeInBudget:r["Avg. time in budget"]||"",
+  acos:pn(r["ACOS"]),roas:pn(r["ROAS"]),
+  purchases:pn(r["Purchases"]),sales:pn(r["Sales"]||r["Sales (converted)"]),
+  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),ctr:pn(r["CTR"]),
+  cost:pn(r["Total cost"]||r["Total cost (converted)"]),cpc:pn(r["CPC"]||r["CPC (converted)"]),
+  tos:r["Top-of-search impression share"]||""
+})).filter(r=>r.name)}
 
-// advertised_product tab: SP Advertised Product Report (Daily)
-// Actual: Date, Portfolio name, Campaign Name, Ad Group Name, Advertised SKU, Advertised ASIN, Impressions, Clicks, CTR, Total cost, CPC, Purchases, Sales, ACOS, ROAS
-function parseAP(rows){return rows.map(r=>({date:fixD(r["Date"]||""),
-  camp:r["Campaign Name"]||r["Campaign"]||"",
-  asin:r["Advertised ASIN"]||r["ASIN"]||"",
-  sku:r["Advertised SKU"]||r["SKU"]||"",
-  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),
-  cost:pn(r["Total cost (USD)"]||r["Spend"]),
-  pur:pn(r["Purchases"]||r["7 Day Total Orders"]||r["Orders"]),
-  sales:pn(r["Sales (USD)"]||r["7 Day Total Sales"]||r["Sales"])})).filter(r=>r.asin)}
+// targeting tab: from SP Targeting XLSX
+function parseTgt(rows){return rows.map(r=>({
+  date:fixD(r["Date"]||""),camp:r["Campaign Name"]||"",adGroup:r["Ad Group Name"]||"",
+  kw:r["Targeting"]||"",mt:r["Match Type"]||"",
+  imp:pn(r["Impressions"]),tos:r["Top-of-search Impression Share"]||"",
+  clk:pn(r["Clicks"]),ctr:pn(r["Click-Thru Rate (CTR)"]),cpc:pn(r["Cost Per Click (CPC)"]),
+  spend:pn(r["Spend"]),acos:pn(r["Total Advertising Cost of Sales (ACOS) "]),
+  roas:pn(r["Total Return on Advertising Spend (ROAS)"]),
+  sales:pn(r["7 Day Total Sales "]),orders:pn(r["7 Day Total Orders (#)"]),
+  units:pn(r["7 Day Total Units (#)"]),cvr:pn(r["7 Day Conversion Rate"]),
+  advUnits:pn(r["7 Day Advertised SKU Units (#)"]),otherUnits:pn(r["7 Day Other SKU Units (#)"]),
+  advSales:pn(r["7 Day Advertised SKU Sales "]),otherSales:pn(r["7 Day Other SKU Sales "])
+})).filter(r=>r.kw)}
 
-// search_terms tab: SP Search Term Report (Daily)
-// Actual: Date, Portfolio name, Campaign Name, Ad Group Name, Targeting, Match Type, Customer Search Term, Impressions, Clicks, CTR, Total cost, CPC, 7 Day Total Orders, 7 Day Total Sales, 7 Day Total Units, ACOS, ROAS
-function parseST(rows){return rows.map(r=>({date:fixD(r["Date"]||""),
-  query:r["Customer Search Term"]||r["Search Term"]||"",
-  kw:r["Targeting"]||r["Keyword"]||"",
-  camp:r["Campaign Name"]||"",
-  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),
-  cost:pn(r["Total cost (USD)"]||r["Spend"]),
-  sales:pn(r["7 Day Total Sales"]||r["Sales (USD)"]||r["Sales"]),
-  orders:pn(r["7 Day Total Orders"]||r["Purchases"]||r["Orders"])})).filter(r=>r.query)}
+// search_terms tab: from SP Search Term XLSX
+function parseST(rows){return rows.map(r=>({
+  date:fixD(r["Date"]||""),camp:r["Campaign Name"]||"",
+  kw:r["Targeting"]||"",mt:r["Match Type"]||"",
+  query:r["Customer Search Term"]||"",
+  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),spend:pn(r["Spend"]),
+  sales:pn(r["7 Day Total Sales "]),orders:pn(r["7 Day Total Orders (#)"]),
+  advSales:pn(r["7 Day Advertised SKU Sales "]),otherSales:pn(r["7 Day Other SKU Sales "])
+})).filter(r=>r.query)}
 
-// business_report tab: Detail Page Sales and Traffic by Child Item
-// Actual: Date, (Child) ASIN, Title, Sessions - Total, Session Percentage - Total, Page Views - Total, Page Views Percentage - Total, Featured Offer (Buy Box) Percentage, Units Ordered, Units Ordered - B2B, Unit Session Percentage, Unit Session Percentage - B2B, Ordered Product Sales, Ordered Product Sales - B2B
-function parseBR(rows){return rows.map(r=>({date:fixD(r["Date"]||""),
-  asin:r["(Child) ASIN"]||r["ASIN"]||"",title:r["Title"]||"",
-  sessions:pn(r["Sessions - Total"]||r["Sessions"]),
-  pv:pn(r["Page Views - Total"]||r["Page Views"]),
-  units:pn(r["Units Ordered"]||r["Units Ordered - Total"]),
-  sales:pn(r["Ordered Product Sales"]||r["Ordered Product Sales - Total"]),
-  cvr:pn(r["Unit Session Percentage"]||r["Unit Session Percentage - Total"]),
-  bbox:pn(r["Featured Offer (Buy Box) Percentage"]||r["Buy Box Percentage"])})).filter(r=>r.asin)}
+// business_report tab: from Business Report CSV (Date manual)
+function parseBR(rows){return rows.map(r=>({
+  date:fixD(r["Date"]||""),asin:r["(Child) ASIN"]||"",title:r["Title"]||"",
+  sessions:pn(r["Sessions - Total"]),pv:pn(r["Page Views - Total"]),
+  bbox:pn(r["Featured Offer (Buy Box) Percentage"]),
+  units:pn(r["Units Ordered"]),cvr:pn(r["Unit Session Percentage"]),
+  sales:pn(r["Ordered Product Sales"])
+})).filter(r=>r.asin)}
+
+// purchased_product tab: from 구매한 상품 보고서 (Korean headers)
+function parsePP(rows){return rows.map(r=>({
+  date:fixD(r["날짜"]||r["Date"]||""),camp:r["캠페인 이름"]||r["Campaign Name"]||"",
+  advSku:r["광고된 SKU"]||r["Advertised SKU"]||"",advAsin:r["광고된 ASIN"]||r["Advertised ASIN"]||"",
+  kw:r["키워드"]||r["Keyword"]||"",mt:r["일치 유형"]||r["Match Type"]||"",
+  purAsin:r["구매한 ASIN"]||r["Purchased ASIN"]||"",
+  otherQty:pn(r["7일 기타 SKU 수량(개수)"]||r["7 Day Other SKU Units (#)"]),
+  otherOrders:pn(r["7일 기타 SKU 주문(건수)"]||r["7 Day Other SKU Orders (#)"]),
+  otherSales:pn(r["7일 기타 SKU 판매 "]||r["7 Day Other SKU Sales "])
+})).filter(r=>r.advAsin||r.purAsin)}
 
 // ═══ ANALYSIS ═══
-function dailyAd(data){const by={};data.forEach(r=>{if(!r.date)return;if(!by[r.date])by[r.date]={date:r.date,cost:0,sales:0,imp:0,clk:0,pur:0};
-by[r.date].cost+=r.cost;by[r.date].sales+=r.sales;by[r.date].imp+=r.imp;by[r.date].clk+=r.clk;by[r.date].pur+=r.pur});
-return Object.values(by).sort((a,b)=>a.date.localeCompare(b.date)).map(d=>({...d,acos:d.sales>0?(d.cost/d.sales*100):0}))}
+function campByDate(data){const byDate={};data.forEach(r=>{if(!r.date)return;if(!byDate[r.date])byDate[r.date]={date:r.date,cost:0,sales:0,imp:0,clk:0,pur:0,camps:[]};
+  byDate[r.date].cost+=r.cost;byDate[r.date].sales+=r.sales;byDate[r.date].imp+=r.imp;byDate[r.date].clk+=r.clk;byDate[r.date].pur+=r.purchases;byDate[r.date].camps.push(r)});
+  return Object.values(byDate).sort((a,b)=>a.date.localeCompare(b.date))}
 
-function campTotals(data){const by={};data.forEach(r=>{const c=r.camp;if(!by[c])by[c]={name:c,purpose:"",imp:0,clk:0,cost:0,pur:0,sales:0,kws:new Set(),budget:false};
-by[c].imp+=r.imp;by[c].clk+=r.clk;by[c].cost+=r.cost;by[c].pur+=r.pur;by[c].sales+=r.sales;by[c].kws.add(r.kw);
-if(r.purpose)by[c].purpose=r.purpose;if(r.status.includes("BUDGET"))by[c].budget=true});
-return Object.values(by).map(c=>({...c,kwCount:c.kws.size,acos:c.sales>0?(c.cost/c.sales*100):0,ctr:c.imp>0?(c.clk/c.imp*100):0})).sort((a,b)=>b.sales-a.sales)}
+function kwTotals(data){const by={};data.forEach(r=>{const k=r.kw+"|"+r.camp;if(!by[k])by[k]={kw:r.kw,camp:r.camp,mt:r.mt,imp:0,clk:0,spend:0,sales:0,orders:0,advSales:0,otherSales:0};
+  by[k].imp+=r.imp;by[k].clk+=r.clk;by[k].spend+=r.spend;by[k].sales+=r.sales;by[k].orders+=r.orders;by[k].advSales+=r.advSales;by[k].otherSales+=r.otherSales});
+  return Object.values(by).map(k=>({...k,acos:k.sales>0?(k.spend/k.sales*100):0})).sort((a,b)=>b.sales-a.sales)}
 
-function kwByCamp(data,campName){return data.filter(r=>r.camp===campName)}
+function crossSellAnalysis(data){
+  const pairs={};data.forEach(r=>{if(!r.advAsin||!r.purAsin)return;
+    const key=r.advAsin+"→"+r.purAsin;
+    if(!pairs[key])pairs[key]={advAsin:r.advAsin,purAsin:r.purAsin,kws:new Set(),qty:0,orders:0,sales:0};
+    if(r.kw)pairs[key].kws.add(r.kw);pairs[key].qty+=r.otherQty;pairs[key].orders+=r.otherOrders;pairs[key].sales+=r.otherSales});
+  return Object.values(pairs).filter(p=>p.orders>0||p.qty>0).sort((a,b)=>b.orders-a.orders)}
 
-function kwTotals(data){const by={};data.forEach(r=>{if(!by[r.kw])by[r.kw]={kw:r.kw,mt:r.mt,bid:r.bid,sug:r.sug,imp:0,clk:0,cost:0,pur:0,sales:0,budget:false,camp:r.camp};
-by[r.kw].imp+=r.imp;by[r.kw].clk+=r.clk;by[r.kw].cost+=r.cost;by[r.kw].pur+=r.pur;by[r.kw].sales+=r.sales;by[r.kw].bid=r.bid;by[r.kw].sug=r.sug;
-if(r.status.includes("BUDGET"))by[r.kw].budget=true});
-return Object.values(by).map(k=>({...k,acos:k.sales>0?(k.cost/k.sales*100):0})).sort((a,b)=>b.sales-a.sales)}
+function asinTraffic(data){const by={};data.forEach(r=>{if(!by[r.asin])by[r.asin]={asin:r.asin,title:r.title,sess:0,units:0,sales:0,cvrs:[],bboxs:[]};
+  by[r.asin].sess+=r.sessions;by[r.asin].units+=r.units;by[r.asin].sales+=r.sales;if(r.cvr>0)by[r.asin].cvrs.push(r.cvr);if(r.bbox>0)by[r.asin].bboxs.push(r.bbox)});
+  return Object.values(by).map(a=>({...a,cvr:av(a.cvrs),bbox:av(a.bboxs)})).sort((a,b)=>b.sess-a.sess)}
 
-function asinAdTotals(data){const by={};data.forEach(r=>{if(!by[r.asin])by[r.asin]={asin:r.asin,sku:r.sku,camp:r.camp,imp:0,clk:0,cost:0,pur:0,sales:0};
-by[r.asin].imp+=r.imp;by[r.asin].clk+=r.clk;by[r.asin].cost+=r.cost;by[r.asin].pur+=r.pur;by[r.asin].sales+=r.sales});
-return Object.values(by).map(a=>({...a,acos:a.sales>0?(a.cost/a.sales*100):0})).sort((a,b)=>b.sales-a.sales)}
-
-function asinTraffic(data){const by={};data.forEach(r=>{if(!by[r.asin])by[r.asin]={asin:r.asin,title:r.title,sess:0,pv:0,units:0,sales:0,cvrs:[],bboxs:[]};
-by[r.asin].sess+=r.sessions;by[r.asin].pv+=r.pv;by[r.asin].units+=r.units;by[r.asin].sales+=r.sales;if(r.cvr>0)by[r.asin].cvrs.push(r.cvr);if(r.bbox>0)by[r.asin].bboxs.push(r.bbox)});
-return Object.values(by).map(a=>({...a,cvr:av(a.cvrs),bbox:av(a.bboxs)})).sort((a,b)=>b.sess-a.sess)}
-
-function pctCh(c,p){return p>0?((c-p)/p*100):0}
 function chgB(v,inv){const val=inv?v*-1:v;if(Math.abs(val)<0.5)return'';return`<span class="chg ${val>0?"up":"down"}">${val>0?"+":""}${val.toFixed(1)}%</span>`}
+function pctCh(c,p){return p>0?((c-p)/p*100):0}
 
 // ═══ SYNC ═══
-async function syncAll(id){const sync={campaign:false,advertised_product:false,search_terms:false,business_report:false};
-const c=await loadSheet(id,"campaign");if(c&&c.length){S.campaign=parseC(c);LS.set("c",S.campaign);sync.campaign=true}
-const a=await loadSheet(id,"advertised_product");if(a&&a.length){S.ap=parseAP(a);LS.set("a",S.ap);sync.advertised_product=true}
-const s=await loadSheet(id,"search_terms");if(s&&s.length){S.st=parseST(s);LS.set("s",S.st);sync.search_terms=true}
-const b=await loadSheet(id,"business_report");if(b&&b.length){S.br=parseBR(b);LS.set("b",S.br);sync.business_report=true}
-S.sync=sync;S.lastSync=new Date().toLocaleString("ko-KR");LS.set("sync",sync);LS.set("last",S.lastSync);return sync}
+async function syncAll(id){
+  const sync={campaign:false,targeting:false,search_terms:false,business_report:false,purchased_product:false};
+  const c=await loadSheet(id,"campaign");if(c&&c.length){S.camp=parseCamp(c);LS.set("c",S.camp);sync.campaign=true}
+  const t=await loadSheet(id,"targeting");if(t&&t.length){S.tgt=parseTgt(t);LS.set("t",S.tgt);sync.targeting=true}
+  const s=await loadSheet(id,"search_terms");if(s&&s.length){S.st=parseST(s);LS.set("s",S.st);sync.search_terms=true}
+  const b=await loadSheet(id,"business_report");if(b&&b.length){S.br=parseBR(b);LS.set("b",S.br);sync.business_report=true}
+  const p=await loadSheet(id,"purchased_product");if(p&&p.length){S.pp=parsePP(p);LS.set("p",S.pp);sync.purchased_product=true}
+  S.sync=sync;S.lastSync=new Date().toLocaleString("ko-KR");LS.set("sync",sync);LS.set("last",S.lastSync);return sync}
 
 // ═══ CONNECT ═══
 async function handleConnect(){const url=document.getElementById("sheetInput").value;const m=url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-if(!m){alert("URL을 정확히 붙여넣어 주세요.");return}const btn=document.getElementById("connectBtn");
-btn.disabled=true;btn.innerHTML='<span class="spinner"></span>연결 중...';S.sheetId=m[1];LS.set("id",S.sheetId);
-await syncAll(S.sheetId);btn.disabled=false;btn.textContent="구글시트 연결";showDashboard()}
+  if(!m){alert("URL을 정확히 붙여넣어 주세요.");return}const btn=document.getElementById("connectBtn");
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>연결 중...';S.sheetId=m[1];LS.set("id",S.sheetId);
+  await syncAll(S.sheetId);btn.disabled=false;btn.textContent="구글시트 연결";showDashboard()}
 async function handleRefresh(){const btn=document.getElementById("refreshBtn");
-btn.innerHTML='<span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span>';
-await syncAll(S.sheetId);btn.textContent="🔄 동기화";renderHeader();renderTab()}
+  btn.innerHTML='<span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span>';
+  await syncAll(S.sheetId);btn.textContent="🔄 동기화";renderHeader();renderTab()}
 
-// ═══ RENDER CORE ═══
+// ═══ RENDER ═══
 let charts={};function dc(){Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}});charts={}}
-function renderHeader(){document.getElementById("statusDots").innerHTML=
-`<span class="dot ${S.sync.campaign?"ok":"no"}"></span>캠페인 <span class="dot ${S.sync.advertised_product?"ok":"no"}"></span>상품광고 <span class="dot ${S.sync.search_terms?"ok":"no"}"></span>검색어 <span class="dot ${S.sync.business_report?"ok":"no"}"></span>트래픽`;
-document.getElementById("lastSyncText").textContent=S.lastSync?"마지막: "+S.lastSync:""}
+function renderHeader(){
+  const s=S.sync;document.getElementById("statusDots").innerHTML=
+  `<span class="dot ${s.campaign?"ok":"no"}"></span>캠페인 <span class="dot ${s.targeting?"ok":"no"}"></span>키워드 <span class="dot ${s.search_terms?"ok":"no"}"></span>검색어 <span class="dot ${s.business_report?"ok":"no"}"></span>트래픽 <span class="dot ${s.purchased_product?"ok":"no"}"></span>크로스셀`;
+  document.getElementById("lastSyncText").textContent=S.lastSync?"마지막: "+S.lastSync:""}
 function renderTabs(){const bar=document.getElementById("tabBar");bar.innerHTML="";
-[["funnel","🔬 퍼널"],["campaign","📊 캠페인"],["search","🔍 검색어"],["product","📦 상품"],["ai","🤖 AI"],["settings","⚙️"]].forEach(([id,l])=>{
-const b=document.createElement("button");b.className="tab"+(S.tab===id?" active":"");b.textContent=l;
-b.onclick=()=>{S.tab=id;renderTabs();renderTab()};bar.appendChild(b)})}
+  [["overview","🔬 퍼널"],["campaign","📊 캠페인"],["search","🔍 검색어"],["product","👥 상품"],["crosssell","🔀 크로스셀"],["ai","🤖 AI"],["settings","⚙️"]].forEach(([id,l])=>{
+  const b=document.createElement("button");b.className="tab"+(S.tab===id?" active":"");b.textContent=l;
+  b.onclick=()=>{S.tab=id;renderTabs();renderTab()};bar.appendChild(b)})}
 function renderTab(){dc();document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));
-const el=document.getElementById("sec-"+S.tab);if(!el)return;el.classList.add("active");el.innerHTML="";
-({funnel:renderFunnel,campaign:renderCampaign,search:renderSearch,product:renderProduct,ai:renderAi,settings:renderSettings})[S.tab]?.(el)}
-function kpi(l,v,sub,color){return`<div class="card kpi"><div class="lb">${l}</div><div class="vl" style="color:${color}">${v}</div>${sub?`<div class="sb">${sub}</div>`:""}</div>`}
+  const el=document.getElementById("sec-"+S.tab);if(!el)return;el.classList.add("active");el.innerHTML="";
+  ({overview:rOverview,campaign:rCampaign,search:rSearch,product:rProduct,crosssell:rCrossSell,ai:rAi,settings:rSettings})[S.tab]?.(el)}
+function kpi(l,v,sub,c){return`<div class="card kpi"><div class="lb">${l}</div><div class="vl" style="color:${c}">${v}</div>${sub?`<div class="sb">${sub}</div>`:""}</div>`}
 function empty(i,t,d){return`<div class="card" style="text-align:center;padding:28px"><div style="font-size:24px;margin-bottom:8px">${i}</div><div style="font-size:12px;font-weight:700;margin-bottom:6px">${t}</div><div style="font-size:10px;color:var(--mt);line-height:1.6">${d}</div></div>`}
 
-// ══════════════════════════════════════
-// TAB 1: 퍼널 진단
-// ══════════════════════════════════════
-function renderFunnel(el){
-  const daily=dailyAd(S.campaign);const kws=kwTotals(S.campaign);const camps=campTotals(S.campaign);
-  const tCost=sm(daily.map(d=>d.cost)),tSales=sm(daily.map(d=>d.sales)),tImp=sm(daily.map(d=>d.imp)),tClk=sm(daily.map(d=>d.clk)),tPur=sm(daily.map(d=>d.pur));
-  const acos=tSales>0?(tCost/tSales*100):0;const ctr=tImp>0?(tClk/tImp*100):0;
-  const avgCVR=av(S.br.filter(r=>r.cvr>0).map(r=>r.cvr));
-  const nDays=[...new Set(S.campaign.map(r=>r.date))].length;
-  const budgetKws=kws.filter(k=>k.budget).length;const zeroKws=kws.filter(k=>k.clk>=5&&k.sales===0).length;
+const PURPOSE_L={launch:{l:"🚀런칭",c:"#8B5CF6"},bestseller:{l:"👑베셀",c:"#F59E0B"},clearance:{l:"🏷️정리",c:"#EC4899"},conquest:{l:"🎯공략",c:"#06B6D4"},seasonal:{l:"📅시즌",c:"#F97316"},defense:{l:"🛡️방어",c:"#3B82F6"}};
 
-  // Day-over-day
+// ═══ TAB: Overview ═══
+function rOverview(el){
+  if(!S.camp.length){el.innerHTML=empty("🔬","퍼널 진단","campaign 탭에 데이터를 넣고 🔄 동기화");return}
+  const daily=campByDate(S.camp);const latest=daily[daily.length-1];const prev=daily.length>1?daily[daily.length-2]:null;
+  const tCost=sm(S.camp.map(r=>r.cost)),tSales=sm(S.camp.map(r=>r.sales)),tPur=sm(S.camp.map(r=>r.purchases));
+  const acos=tSales>0?(tCost/tSales*100):0;
+  const budgetIssues=S.camp.filter(r=>r.status.includes("BUDGET")).length;
+  const avgCVR=av(S.br.filter(r=>r.cvr>0).map(r=>r.cvr));
+  const crossPairs=crossSellAnalysis(S.pp);
+
   let html="";
-  if(daily.length>=2){const t=daily[daily.length-1],y=daily[daily.length-2];
-    html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">전일 대비 (${t.date})</div>
+  if(latest&&prev){
+    html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">전일 대비 (${latest.date})</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:10px">
-    <div>매출 $${t.sales.toFixed(0)} ${chgB(pctCh(t.sales,y.sales))}</div>
-    <div>광고비 $${t.cost.toFixed(0)} ${chgB(pctCh(t.cost,y.cost))}</div>
-    <div>ACOS ${t.acos.toFixed(0)}% ${chgB(pctCh(t.acos,y.acos),true)}</div>
-    <div>노출 ${t.imp.toLocaleString()} ${chgB(pctCh(t.imp,y.imp))}</div>
-    <div>클릭 ${t.clk} ${chgB(pctCh(t.clk,y.clk))}</div>
-    <div>구매 ${t.pur} ${chgB(pctCh(t.pur,y.pur))}</div></div></div>`}
+    <div>매출 $${latest.sales.toFixed(0)} ${chgB(pctCh(latest.sales,prev.sales))}</div>
+    <div>광고비 $${latest.cost.toFixed(0)} ${chgB(pctCh(latest.cost,prev.cost))}</div>
+    <div>구매 ${latest.pur}건 ${chgB(pctCh(latest.pur,prev.pur))}</div></div></div>`}
 
   // Alerts
-  let alerts="";
-  if(budgetKws>0)alerts+=`<div class="alert warn">⚠ ${budgetKws}개 키워드 예산 소진 상태</div>`;
-  if(zeroKws>0)alerts+=`<div class="alert bad">🚨 ${zeroKws}개 키워드 클릭만 발생, 매출 0 → $${kws.filter(k=>k.clk>=5&&k.sales===0).reduce((s,k)=>s+k.cost,0).toFixed(0)} 낭비</div>`;
-  if(avgCVR>0&&avgCVR<5)alerts+=`<div class="alert warn">⚠ 평균 CVR ${avgCVR.toFixed(1)}% — 상품 페이지 점검 필요</div>`;
-  if(!alerts&&S.campaign.length)alerts=`<div class="alert good">✅ 심각한 이상 없음</div>`;
-  html+=alerts;
+  if(budgetIssues>0)html+=`<div class="alert warn">⚠ ${budgetIssues}개 캠페인 예산 소진</div>`;
+  if(avgCVR>0&&avgCVR<5)html+=`<div class="alert warn">⚠ 평균 CVR ${avgCVR.toFixed(1)}% — 상품 페이지 점검</div>`;
+  if(crossPairs.length>0)html+=`<div class="alert good">💡 크로스셀 ${crossPairs.length}건 발견 → 크로스셀 탭 확인</div>`;
 
-  // Funnel steps
-  html+=`<div style="font-size:12px;font-weight:700;margin:12px 0 8px">퍼널 현황</div>`;
-  [{n:1,t:"노출",v:tImp?tImp.toLocaleString():"—",s:budgetKws>0?"예산소진 "+budgetKws+"개":"정상",c:"var(--ac)",tab:"campaign"},
-   {n:2,t:"CTR",v:ctr?ctr.toFixed(2)+"%":"—",s:ctr<0.3?"낮음":"양호",c:"var(--pu)",tab:"campaign"},
-   {n:3,t:"CVR (상품페이지)",v:avgCVR?avgCVR.toFixed(1)+"%":"데이터 필요",s:avgCVR<5?"점검 필요":"양호",c:"var(--or)",tab:"product"},
-   {n:4,t:"ACOS",v:acos?acos.toFixed(1)+"%":"—",s:acos>30?"목표 초과":"목표 달성",c:acos>30?"var(--rd)":"var(--gn)",tab:"campaign"},
-  ].forEach(f=>{
-    html+=`<div class="camp-card" onclick="S.tab='${f.tab}';renderTabs();renderTab()">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div style="font-size:11px;font-weight:600"><span style="color:${f.c};margin-right:4px">${f.n}.</span>${f.t}</div>
-        <div style="text-align:right"><div style="font-size:15px;font-weight:800;color:${f.c}">${f.v}</div>
-          <div style="font-size:9px;color:var(--mt)">${f.s}</div></div></div></div>`});
+  html+=`<div class="g2">${kpi("광고 매출","$"+tSales.toFixed(0),daily.length+"일·"+tPur+"건","#10B981")}
+    ${kpi("광고비","$"+tCost.toFixed(0),"ACOS "+acos.toFixed(0)+"%",acos>30?"#EF4444":"#10B981")}</div>`;
 
-  // Chart
-  if(daily.length){
-    html+=`<div class="card"><div style="font-size:12px;font-weight:700;margin-bottom:10px">일별 매출 & ACOS</div>
-      <canvas id="chF" style="height:150px;width:100%"></canvas></div>`;
+  if(daily.length>1){
+    html+=`<div class="card"><div style="font-size:12px;font-weight:700;margin-bottom:10px">일별 매출</div><canvas id="chO" style="height:140px;width:100%"></canvas></div>`;
   }
-  if(!S.campaign.length)html=empty("🔬","퍼널 진단","campaign 탭에 데이터를 넣고 🔄 동기화");
   el.innerHTML=html;
-  if(daily.length)setTimeout(()=>{const lb=daily.map(d=>d.date.slice(5));
-    charts.f=new Chart(document.getElementById("chF"),{type:"bar",data:{labels:lb,datasets:[
-      {label:"매출",data:daily.map(d=>d.sales),backgroundColor:"rgba(16,185,129,0.6)",borderRadius:3,yAxisID:'y'},
-      {label:"ACOS %",data:daily.map(d=>d.acos),type:"line",borderColor:"#EF4444",backgroundColor:"rgba(239,68,68,0.1)",fill:true,tension:.3,borderWidth:2,yAxisID:'y1'}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:"#94A3B8",font:{size:9}}}},
-      scales:{x:{ticks:{font:{size:7},color:"#64748B",maxRotation:45},grid:{display:false}},
-        y:{ticks:{font:{size:8},color:"#64748B"},grid:{color:"rgba(255,255,255,0.03)"}},
-        y1:{position:'right',ticks:{font:{size:8},color:"#EF4444"},grid:{display:false}}}}})},50);
+  if(daily.length>1)setTimeout(()=>{charts.o=new Chart(document.getElementById("chO"),{type:"bar",
+    data:{labels:daily.map(d=>d.date.slice(5)),datasets:[{label:"매출",data:daily.map(d=>d.sales),backgroundColor:"rgba(16,185,129,0.6)",borderRadius:3}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:7},color:"#64748B",maxRotation:45},grid:{display:false}},y:{ticks:{font:{size:8},color:"#64748B"},grid:{color:"rgba(255,255,255,0.03)"}}}}})},50);
 }
 
-// ══════════════════════════════════════
-// TAB 2: 캠페인 (Campaign + Keywords)
-// ══════════════════════════════════════
-let expandedCamp=null;
-function renderCampaign(el){
-  if(!S.campaign.length){el.innerHTML=empty("📊","캠페인 데이터 대기 중","campaign 탭에 Campaign Name 포함 데이터 동기화 필요");return}
-  const camps=campTotals(S.campaign);const nDays=[...new Set(S.campaign.map(r=>r.date))].length;
+// ═══ TAB: Campaign ═══
+let expCamp=null;
+function rCampaign(el){
+  if(!S.camp.length){el.innerHTML=empty("📊","캠페인 데이터 대기 중","campaign 탭 동기화 필요");return}
+  // Latest date camps
+  const dates=[...new Set(S.camp.map(r=>r.date))].sort();
+  const latestDate=dates[dates.length-1];
+  const latestCamps=S.camp.filter(r=>r.date===latestDate);
 
-  let html=`<div style="font-size:12px;font-weight:700;margin-bottom:8px">캠페인별 성과 (${camps.length}개 · ${nDays}일)</div>`;
+  let html=`<div style="font-size:12px;font-weight:700;margin-bottom:8px">캠페인 (${latestDate}, ${latestCamps.length}개)</div>`;
+  latestCamps.sort((a,b)=>b.sales-a.sales).forEach(c=>{
+    const isExp=expCamp===c.name;
+    const acosC=c.acos>1?"#EF4444":c.acos>0.3?"#F59E0B":c.acos>0?"#10B981":"#64748B";
+    const p=c.purpose&&PURPOSE_L[c.purpose.toLowerCase()]?PURPOSE_L[c.purpose.toLowerCase()]:null;
+    const budgetWarn=c.status.includes("BUDGET");
 
-  const PURPOSE_LABELS={launch:{label:"🚀 런칭",color:"#8B5CF6"},bestseller:{label:"👑 베스트셀러",color:"#F59E0B"},clearance:{label:"🏷️ 재고정리",color:"#EC4899"},conquest:{label:"🎯 경쟁사",color:"#06B6D4"},seasonal:{label:"📅 시즌",color:"#F97316"},defense:{label:"🛡️ 방어",color:"#3B82F6"}};
-
-  camps.forEach(c=>{
-    const isExp=expandedCamp===c.name;
-    const acosColor=c.acos>100?"#EF4444":c.acos>30?"#F59E0B":c.acos>0?"#10B981":"#64748B";
-    const p=c.purpose?PURPOSE_LABELS[c.purpose.toLowerCase()]||{label:c.purpose,color:"#64748B"}:null;
-    html+=`<div class="camp-card" style="border-color:${isExp?"rgba(59,130,246,0.3)":"var(--bd)"}" onclick="expandedCamp=expandedCamp==='${c.name.replace(/'/g,"\\'")}' ?null:'${c.name.replace(/'/g,"\\'")}';renderTab()">
+    html+=`<div class="camp-card" style="border-color:${isExp?"rgba(59,130,246,0.3)":"var(--bd)"}" onclick="expCamp=expCamp==='${c.name.replace(/'/g,"\\'")}' ?null:'${c.name.replace(/'/g,"\\'")}';renderTab()">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div style="flex:1;min-width:0">
-          <div style="font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}${c.budget?'<span style="color:#EF4444;font-size:8px"> 예산⚠</span>':""}</div>
-          <div style="font-size:9px;color:var(--mt)">${p?`<span style="color:${p.color};font-weight:600">${p.label}</span> · `:""}${c.kwCount}개 키워드 · ${c.clk}클릭</div>
+          <div style="font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}${budgetWarn?' <span style="color:#EF4444;font-size:8px">예산⚠</span>':""}</div>
+          <div style="font-size:9px;color:var(--mt)">${p?`<span style="color:${p.c};font-weight:600">${p.l}</span> · `:""}${c.type} · 예산${c.budget}${c.timeInBudget?" · 예산시간:"+c.timeInBudget:""}</div>
         </div>
-        <div style="text-align:right;min-width:80px">
+        <div style="text-align:right;min-width:75px">
           <div style="font-size:13px;font-weight:700;color:#10B981">$${c.sales.toFixed(0)}</div>
-          <div style="font-size:10px"><span style="color:${acosColor};font-weight:700">ACOS ${c.acos.toFixed(0)}%</span> <span style="color:var(--mt)">$${c.cost.toFixed(0)}</span></div>
+          <div style="font-size:10px"><span style="color:${acosC};font-weight:700">ACOS ${(c.acos*100).toFixed(0)}%</span></div>
         </div>
       </div>`;
 
-    // Expanded: show keywords for this campaign
     if(isExp){
-      const kws=kwTotals(kwByCamp(S.campaign,c.name));
-      html+=`<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--bd)">
-        <div style="font-size:10px;font-weight:600;margin-bottom:6px;color:var(--ac)">키워드 상세 (${kws.length}개)</div>
-        <div style="overflow-x:auto"><table><thead><tr>${["키워드","입찰","추천","노출","클릭","구매","ACOS"].map(h=>"<th>"+h+"</th>").join("")}</tr></thead><tbody>`;
-      kws.forEach(k=>{
-        const low=k.bid<k.sug*0.7;const ac=k.acos>100?"#EF4444":k.acos>30?"#F59E0B":k.acos>0?"#10B981":"#64748B";
-        html+=`<tr style="background:${k.sales>0?"rgba(16,185,129,0.03)":k.clk>=5&&k.sales===0?"rgba(239,68,68,0.03)":""}">
-          <td style="font-weight:500;max-width:95px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${k.kw}${k.budget?'<span style="color:#EF4444;font-size:7px"> ⚠</span>':""}</td>
-          <td style="color:${low?"#F59E0B":"#E2E8F0"};font-weight:${low?700:400}">${k.bid||"-"}</td>
-          <td style="color:#64748B">${k.sug||"-"}</td>
-          <td>${k.imp>0?k.imp.toLocaleString():"-"}</td><td>${k.clk||"-"}</td>
-          <td style="color:${k.pur>0?"#10B981":"#64748B"};font-weight:700">${k.pur||"-"}</td>
-          <td style="font-weight:600;color:${ac}">${k.acos>0?k.acos.toFixed(0)+"%":"-"}</td></tr>`});
-      html+=`</tbody></table></div></div>`;
+      // Show targeting keywords for this campaign
+      const campKws=S.tgt.filter(t=>t.camp===c.name);
+      if(campKws.length){
+        const kws=kwTotals(campKws);
+        html+=`<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--bd)">
+          <div style="font-size:10px;font-weight:600;margin-bottom:6px;color:var(--ac)">키워드 상세 (${kws.length}개)</div>
+          <div style="overflow-x:auto"><table><thead><tr>${["키워드","매치","노출","클릭","CPC","매출","ACOS"].map(h=>"<th>"+h+"</th>").join("")}</tr></thead><tbody>`;
+        kws.slice(0,15).forEach(k=>{
+          const ac=k.acos>100?"#EF4444":k.acos>30?"#F59E0B":k.acos>0?"#10B981":"#64748B";
+          html+=`<tr><td style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${k.kw}</td>
+            <td style="color:#64748B">${k.mt||"-"}</td><td>${k.imp.toLocaleString()}</td><td>${k.clk}</td>
+            <td>$${(k.spend/Math.max(k.clk,1)).toFixed(2)}</td>
+            <td style="color:#10B981;font-weight:700">$${k.sales.toFixed(0)}</td>
+            <td style="color:${ac};font-weight:600">${k.acos>0?k.acos.toFixed(0)+"%":"-"}</td></tr>`});
+        html+=`</tbody></table></div></div>`;
+      } else {
+        html+=`<div style="margin-top:8px;font-size:9px;color:var(--mt)">targeting 탭에 이 캠페인 키워드를 추가하면 상세 분석 가능</div>`;
+      }
     }
     html+=`</div>`;
   });
   el.innerHTML=html;
 }
 
-// ══════════════════════════════════════
-// TAB 3: 검색어
-// ══════════════════════════════════════
-function renderSearch(el){
+// ═══ TAB: Search Terms ═══
+function rSearch(el){
   if(!S.st.length){el.innerHTML=empty("🔍","검색어 데이터 대기 중","search_terms 탭 동기화 필요");return}
-  const byQ={};S.st.forEach(s=>{if(!byQ[s.query])byQ[s.query]={q:s.query,imp:0,clk:0,cost:0,sales:0,orders:0};
-    byQ[s.query].imp+=s.imp;byQ[s.query].clk+=s.clk;byQ[s.query].cost+=s.cost;byQ[s.query].sales+=s.sales;byQ[s.query].orders+=s.orders});
+  const byQ={};S.st.forEach(s=>{if(!byQ[s.query])byQ[s.query]={q:s.query,imp:0,clk:0,spend:0,sales:0,orders:0,advSales:0,otherSales:0};
+    byQ[s.query].imp+=s.imp;byQ[s.query].clk+=s.clk;byQ[s.query].spend+=s.spend;byQ[s.query].sales+=s.sales;byQ[s.query].orders+=s.orders;byQ[s.query].advSales+=s.advSales;byQ[s.query].otherSales+=s.otherSales});
   const all=Object.values(byQ);const profit=all.filter(s=>s.sales>0).sort((a,b)=>b.sales-a.sales);
-  const waste=all.filter(s=>s.cost>0&&s.sales===0).sort((a,b)=>b.cost-a.cost);
+  const waste=all.filter(s=>s.spend>0&&s.sales===0).sort((a,b)=>b.spend-a.spend);
+  const otherSku=all.filter(s=>s.otherSales>0).sort((a,b)=>b.otherSales-a.otherSales);
 
-  let html=`<div class="g3">${kpi("검색어",""+all.length,"","#E2E8F0")}${kpi("매출",""+profit.length,"","#10B981")}${kpi("낭비",""+waste.length,"$"+sm(waste.map(w=>w.cost)).toFixed(0),"#EF4444")}</div>`;
+  let html=`<div class="g3">${kpi("검색어",""+all.length,"","#E2E8F0")}${kpi("매출",""+profit.length,"","#10B981")}${kpi("낭비",""+waste.length,"$"+sm(waste.map(w=>w.spend)).toFixed(0),"#EF4444")}</div>`;
+
   if(profit.length){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:6px;color:#10B981">매출 기여 TOP 10</div>`;
-    profit.slice(0,10).forEach(s=>{const ac=s.sales>0?(s.cost/s.sales*100):0;
+    profit.slice(0,10).forEach(s=>{const ac=s.sales>0?(s.spend/s.sales*100):0;
       html+=`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:10px">
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.q}</span>
         <span style="color:#10B981;font-weight:700;min-width:45px;text-align:right">$${s.sales.toFixed(0)}</span>
         <span style="color:${ac>30?"#F59E0B":"#64748B"};min-width:35px;text-align:right;font-size:9px">${ac.toFixed(0)}%</span></div>`});
     html+=`</div>`}
-  if(waste.length){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:6px;color:#EF4444">비용 낭비 TOP 10 (네거티브 후보)</div>`;
+  if(otherSku.length){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:6px;color:#8B5CF6">다른 SKU 매출 발생 (크로스셀 기회)</div>`;
+    otherSku.slice(0,5).forEach(s=>{html+=`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:10px">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.q}</span>
+      <span style="color:#8B5CF6;font-weight:700;min-width:55px;text-align:right">+$${s.otherSales.toFixed(0)} 타SKU</span></div>`});
+    html+=`</div>`}
+  if(waste.length){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:6px;color:#EF4444">낭비 TOP 10 (네거티브 후보)</div>`;
     waste.slice(0,10).forEach(s=>{html+=`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:10px">
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.q}</span>
-      <span style="color:#EF4444;font-weight:700;min-width:50px;text-align:right">-$${s.cost.toFixed(2)}</span></div>`});
+      <span style="color:#EF4444;font-weight:700;min-width:50px;text-align:right">-$${s.spend.toFixed(2)}</span></div>`});
     html+=`</div>`}
   el.innerHTML=html;
 }
 
-// ══════════════════════════════════════
-// TAB 4: 상품 성과 (Ad + Traffic merged)
-// ══════════════════════════════════════
-function renderProduct(el){
-  const adAsins=asinAdTotals(S.ap);const trAsins=asinTraffic(S.br);
+// ═══ TAB: Product (traffic) ═══
+function rProduct(el){
+  if(!S.br.length){el.innerHTML=empty("👥","트래픽 데이터 대기 중","business_report 탭 동기화 필요");return}
+  const asins=asinTraffic(S.br);const totalSess=sm(asins.map(a=>a.sess));const avgCVR=av(asins.filter(a=>a.cvr>0).map(a=>a.cvr));
+  let html=`<div class="g2">${kpi("세션",totalSess.toLocaleString(),asins.length+"개 ASIN","#3B82F6")}
+    ${kpi("평균 CVR",avgCVR.toFixed(1)+"%","",avgCVR>10?"#10B981":avgCVR>5?"#F59E0B":"#EF4444")}</div>`;
+  const lowCVR=asins.filter(a=>a.cvr>0&&a.cvr<5);
+  if(lowCVR.length)html+=`<div class="alert warn">⚠ ${lowCVR.length}개 ASIN CVR 5% 미만 → 리스팅 점검</div>`;
+  html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:6px">ASIN별 트래픽 & CVR</div>`;
+  asins.slice(0,15).forEach(a=>{const cc=a.cvr>10?"#10B981":a.cvr>5?"#F59E0B":a.cvr>0?"#EF4444":"#64748B";
+    html+=`<div style="padding:6px 0;border-bottom:1px solid var(--bd)"><div style="display:flex;justify-content:space-between;font-size:10px">
+      <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">${a.title||a.asin}</div>
+      <div style="text-align:right;min-width:90px;font-size:9px">세션 <b>${a.sess.toLocaleString()}</b> <span style="color:${cc};font-weight:700">CVR ${a.cvr.toFixed(1)}%</span></div></div>
+      <div style="margin-top:3px;height:3px;border-radius:2px;background:rgba(255,255,255,0.05)"><div style="height:100%;width:${Math.min(a.cvr*5,100)}%;border-radius:2px;background:${cc}"></div></div></div>`});
+  html+=`</div>`;el.innerHTML=html;
+}
 
-  if(!adAsins.length&&!trAsins.length){el.innerHTML=empty("📦","상품 데이터 대기 중","advertised_product 또는 business_report 탭 동기화 필요");return}
+// ═══ TAB: Cross-sell ═══
+function rCrossSell(el){
+  if(!S.pp.length){el.innerHTML=empty("🔀","크로스셀 데이터 대기 중","purchased_product 탭 동기화 필요<br>광고한 상품 ≠ 구매한 상품 패턴을 분석합니다");return}
+  const pairs=crossSellAnalysis(S.pp);
+  const totalCross=sm(pairs.map(p=>p.orders));
+  const totalCrossSales=sm(pairs.map(p=>p.sales));
 
-  // Merge ad + traffic by ASIN
-  const merged={};
-  adAsins.forEach(a=>{merged[a.asin]={asin:a.asin,sku:a.sku,title:"",adImp:a.imp,adClk:a.clk,adCost:a.cost,adPur:a.pur,adSales:a.sales,acos:a.acos,sess:0,cvr:0,bbox:0,totalUnits:0}});
-  trAsins.forEach(a=>{if(!merged[a.asin])merged[a.asin]={asin:a.asin,sku:"",title:a.title,adImp:0,adClk:0,adCost:0,adPur:0,adSales:0,acos:0,sess:0,cvr:0,bbox:0,totalUnits:0};
-    merged[a.asin].title=a.title||merged[a.asin].title;merged[a.asin].sess=a.sess;merged[a.asin].cvr=a.cvr;merged[a.asin].bbox=a.bbox;merged[a.asin].totalUnits=a.units});
-  const products=Object.values(merged).sort((a,b)=>(b.adSales+b.sess)-(a.adSales+a.sess));
+  let html=`<div class="g2">${kpi("크로스셀 패턴",""+pairs.length+"건","광고≠구매","#8B5CF6")}
+    ${kpi("크로스 매출","$"+totalCrossSales.toFixed(0),totalCross+"건 주문","#10B981")}</div>`;
 
-  const totalAdCost=sm(adAsins.map(a=>a.cost));const totalAdSales=sm(adAsins.map(a=>a.sales));
-  const totalSess=sm(trAsins.map(a=>a.sess));
-
-  let html=`<div class="g3">${kpi("광고 상품",adAsins.length+"개","$"+totalAdCost.toFixed(0)+" 광고비","#3B82F6")}
-    ${kpi("광고 매출","$"+totalAdSales.toFixed(0),totalAdSales>0?"ACOS "+(totalAdCost/totalAdSales*100).toFixed(0)+"%":"","#10B981")}
-    ${kpi("총 세션",totalSess.toLocaleString(),trAsins.length+"개 ASIN","#8B5CF6")}</div>`;
-
-  if(!adAsins.length)html+=`<div class="alert warn">⚠ advertised_product 탭이 비어있습니다. SP Advertised Product Report를 추가하면 상품별 광고비/매출을 볼 수 있습니다.</div>`;
-
-  html+=`<div class="card"><div style="font-size:12px;font-weight:700;margin-bottom:8px">상품별 성과</div>`;
-  products.slice(0,20).forEach(p=>{
-    const acosColor=p.acos>100?"#EF4444":p.acos>30?"#F59E0B":p.acos>0?"#10B981":"#64748B";
-    const cvrColor=p.cvr>10?"#10B981":p.cvr>5?"#F59E0B":p.cvr>0?"#EF4444":"#64748B";
-    html+=`<div class="prod-row">
-      <div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">${p.title||p.asin}</div>
-      <div style="font-size:9px;color:var(--mt);margin-bottom:4px">${p.asin}${p.sku?" · "+p.sku:""}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:10px">
-        <div style="padding:6px 8px;background:rgba(59,130,246,0.05);border-radius:6px">
-          <div style="font-size:8px;color:var(--mt);margin-bottom:2px">광고 성과</div>
-          ${p.adCost>0?`<div>광고비 <b>$${p.adCost.toFixed(0)}</b> → 매출 <b style="color:#10B981">$${p.adSales.toFixed(0)}</b></div>
-          <div>ACOS <b style="color:${acosColor}">${p.acos.toFixed(0)}%</b> · ${p.adClk}클릭 · ${p.adPur}구매</div>`
-          :`<div style="color:var(--mt)">광고 데이터 없음</div>`}
+  if(pairs.length){
+    html+=`<div class="card"><div style="font-size:12px;font-weight:700;margin-bottom:4px">광고한 상품 → 실제 구매한 상품</div>
+      <div style="font-size:9px;color:var(--mt);margin-bottom:8px">고객이 광고를 클릭했지만 다른 상품을 구매한 패턴. 번들/연관 광고 기회</div>`;
+    pairs.slice(0,20).forEach(p=>{
+      html+=`<div style="padding:8px 0;border-bottom:1px solid var(--bd)">
+        <div style="display:flex;align-items:center;gap:6px;font-size:10px">
+          <span style="background:rgba(59,130,246,0.1);padding:2px 6px;border-radius:4px;font-size:9px;color:#3B82F6">${p.advAsin}</span>
+          <span style="color:var(--mt)">→</span>
+          <span style="background:rgba(16,185,129,0.1);padding:2px 6px;border-radius:4px;font-size:9px;color:#10B981;font-weight:600">${p.purAsin}</span>
+          <span style="margin-left:auto;font-weight:700;color:#10B981">${p.orders}건${p.sales>0?" · $"+p.sales.toFixed(0):""}</span>
         </div>
-        <div style="padding:6px 8px;background:rgba(139,92,246,0.05);border-radius:6px">
-          <div style="font-size:8px;color:var(--mt);margin-bottom:2px">트래픽</div>
-          ${p.sess>0?`<div>세션 <b>${p.sess.toLocaleString()}</b> · ${p.totalUnits}주문</div>
-          <div>CVR <b style="color:${cvrColor}">${p.cvr.toFixed(1)}%</b>${p.bbox>0?" · BB "+p.bbox.toFixed(0)+"%":""}</div>`
-          :`<div style="color:var(--mt)">트래픽 데이터 없음</div>`}
-        </div>
-      </div>
-    </div>`;
-  });
-  html+=`</div>`;
+        ${p.kws.size>0?`<div style="font-size:8px;color:var(--mt);margin-top:3px">키워드: ${[...p.kws].slice(0,3).join(", ")}${p.kws.size>3?" 외 "+(p.kws.size-3)+"개":""}</div>`:""}
+      </div>`;
+    });
+    html+=`</div>`;
+
+    html+=`<div class="card" style="background:rgba(139,92,246,0.03);border-color:rgba(139,92,246,0.1)">
+      <div style="font-size:11px;font-weight:700;color:#8B5CF6;margin-bottom:6px">💡 크로스셀 활용 방법</div>
+      <div style="font-size:10px;color:var(--mt);line-height:1.8">
+      • 자주 함께 구매되는 ASIN → <b>번들 상품</b> 만들기<br>
+      • 구매 ASIN에 대한 <b>별도 캠페인</b> 생성 (이미 전환 검증됨)<br>
+      • 광고 ASIN 페이지에 구매 ASIN을 <b>"함께 구매" 추천</b>으로 노출<br>
+      • AI 전략 탭에서 크로스셀 데이터 포함 분석 가능</div></div>`;
+  }
   el.innerHTML=html;
 }
 
-// ══════════════════════════════════════
-// TAB 5: AI 전략 (7 modes)
-// ══════════════════════════════════════
+// ═══ TAB: AI ═══
 let aiState={mode:"all",result:"",loading:false};
 const AI_MODES={
-  new:{label:"🚀 신상품 런칭",color:"#8B5CF6",desc:"노출 확보, 랭킹 진입",
-    prompt:`아마존 PPC 전문가로서 **신상품 런칭** 관점에서 아래 데이터를 분석하고, 즉시 실행 가능한 구체적 액션을 제시해주세요.
-
-신상품 목표: 노출 극대화, 키워드 랭킹 진입, 리뷰/판매 속도 확보 (ACOS 높아도 OK)
-
-반드시 다음 형식으로 답변 (한국어, 마크다운 없이):
-
-[상황 진단] 2~3줄
-
-[예산 조정] 캠페인별로
-- (캠페인명): 현재 → 권장 일예산 (금액), 이유 1줄
-
-[입찰가 조정] 키워드별로
-- (키워드): 현재 $X → $Y로 변경, 이유 (추천입찰가 대비 몇%)
-
-[키워드 추가 제안] 신상품 노출용 새 키워드 3~5개
-- (키워드) / (매치타입) / (시작 입찰가) / 이유
-
-[키워드 제거/네거티브] 전환 없이 비용만 쓰는 키워드
-- (키워드): (근거 — 클릭수, 비용, 매출)
-
-[상품별 예산 배분]
-- (ASIN): 전체 광고비의 X% 배분 권장, 이유`},
-
-  best:{label:"👑 베스트셀러 방어",color:"#F59E0B",desc:"ACOS 최적화, 수익 극대화",
-    prompt:`아마존 PPC 전문가로서 **베스트셀러 방어/수익 극대화** 관점에서 분석하세요.
-
-목표: ACOS 30% 이하, ROAS 3x 이상, 불필요 지출 제거
-
-반드시 다음 형식으로 답변 (한국어, 마크다운 없이):
-
-[수익성 진단] 캠페인별 ACOS 현황, 2~3줄
-
-[예산 조정] 캠페인별로
-- (캠페인명): 증액/감액/유지, 금액, 이유
-
-[입찰가 조정] 키워드별로 (수익성 기준)
-- (키워드): 현재 $X → $Y, 이유 (ACOS 기준)
-- 수익 나는 키워드는 얼마까지 올릴 수 있는지
-- 적자 키워드는 얼마로 낮추거나 중단
-
-[즉시 네거티브 추가] 전환 없는 검색어/키워드
-- (키워드/검색어): 근거 (클릭X회, 비용$Y, 매출$0)
-
-[상품별 판단]
-- (ASIN): 광고 유지/증액/감액/중단, ACOS와 CVR 기준`},
-
-  all:{label:"📊 종합 분석",color:"#3B82F6",desc:"캠페인별/상품별 구체적 액션",
-    prompt:`아마존 PPC 전문가로서 **종합 분석**을 해주세요. 캠페인별, 상품별, 키워드별로 구체적인 숫자 액션을 제시합니다.
-
-반드시 다음 형식으로 답변 (한국어, 마크다운 없이):
-
-[캠페인별 진단 & 예산]
-- (캠페인명): ACOS X%, 매출 $Y → 일예산 증액/감액/유지 + 금액
-
-[상품별 광고 판단]
-- (ASIN/상품명): 광고비 $X → 매출 $Y, ACOS Z% → 증액/감액/중단 판단 + 이유
-- CVR과 연계: CVR이 낮으면 광고 전에 리스팅 개선 우선
-
-[키워드 입찰 조정] (전체 키워드 대상)
-증액: (키워드) 현재 $X → $Y (이유: 전환 좋고 노출 부족)
-감액: (키워드) 현재 $X → $Y (이유: ACOS 높음)
-중단: (키워드) (이유: 클릭만 발생, 전환 0)
-
-[새 키워드 추가 제안] 3~5개
-- (키워드) / (매치타입) / (시작 입찰가) / 근거
-
-[네거티브 키워드 추가] 검색어 데이터 기반
-- (검색어): 비용 $X, 전환 0 → 즉시 네거티브
-
-[7일 후 확인 KPI]
-1. 
-2.`},
-
-  clearance:{label:"🏷️ 재고 정리",color:"#EC4899",desc:"구형 모델 소진, 손절 판단",
-    prompt:`아마존 PPC 전문가로서 **재고 정리** 관점에서 분석하세요.
-
-목표: 구형/저성과 상품 빠르게 소진, 보관료 절감
-
-반드시 다음 형식으로 답변 (한국어, 마크다운 없이):
-
-[재고 리스크 상품] ACOS 높거나 CVR 낮은 상품 식별
-- (ASIN): 현재 상태 + 문제점
-
-[소진 전략 — 상품별]
-- (ASIN): 가격 조정? 쿠폰? 입찰가 공격적 인상? 구체적 숫자
-
-[키워드/예산 조정]
-- 재고 소진용 키워드 입찰가 조정 (구체적 금액)
-- 일예산 한시적 증액 제안
-
-[손절 기준]
-- 이 조건이면 광고 중단: (구체적 숫자 기준)
-- 이 조건이면 FBA 반품/폐기 검토`},
-
-  conquest:{label:"🎯 경쟁사 공략",color:"#06B6D4",desc:"브랜드/ASIN 타겟",
-    prompt:`아마존 PPC 전문가로서 **경쟁사 공략** 관점에서 분석하세요.
-
-폰 케이스 시장 주요 경쟁사: Spigen, Caseology, OtterBox, ESR, Ringke
-
-반드시 다음 형식으로 답변 (한국어, 마크다운 없이):
-
-[현재 경쟁 상황] 데이터에서 경쟁사 관련 키워드 유무 확인
-
-[공략 키워드 제안] 5~8개
-- (경쟁사 브랜드 키워드) / Exact / 시작 입찰가 $X / 예상 ACOS
-- (경쟁사 ASIN 타겟) / Product Targeting / 입찰가
-
-[자사 브랜드 방어]
-- "S.H.LEE" 또는 "spigen" 등 자사 브랜드 키워드 방어 전략
-
-[예산 배분]
-- 전체 광고비 중 경쟁사 공략에 X% 할당 권장 (금액)
-- 기존 키워드 예산은 Y% 유지`},
-
-  seasonal:{label:"📅 시즌 대비",color:"#F97316",desc:"프라임데이, 블프, iPhone",
-    prompt:`아마존 PPC 전문가로서 **시즌/이벤트 대비** 관점에서 분석하세요.
-
-주요 이벤트: 프라임데이(7월), 새 iPhone(9월), 블프(11월), 연말(12월)
-
-반드시 다음 형식으로 답변 (한국어, 마크다운 없이):
-
-[현재 시점 분석] 가장 가까운 이벤트, 남은 기간
-
-[사전 준비 — 예산]
-- (캠페인별) 현재 → 이벤트 전 목표 일예산, 언제부터 인상
-
-[사전 준비 — 입찰가]
-- 핵심 키워드 입찰가 사전 인상 시점 및 금액
-
-[시즌 키워드 추가]
-- (시즌 키워드) / 매치타입 / 입찰가 / 활성화 시기
-
-[이벤트 후 정상화]
-- 예산 복귀 시점, 입찰가 복귀 기준`},
-
-  turnaround:{label:"🔄 적자 전환",color:"#EF4444",desc:"ACOS 100%+ 살릴지 죽일지",
-    prompt:`아마존 PPC 전문가로서 **적자 캠페인/키워드 전환** 관점에서 분석하세요.
-
-판단 기준: 클릭 20회+ & 구매 0 = 강력 중단 후보, ACOS > 100% = 구조적 적자
-
-반드시 다음 형식으로 답변 (한국어, 마크다운 없이):
-
-[적자 현황] 총 낭비 금액, 적자 키워드/캠페인 수
-
-[즉시 중단] (키워드별)
-- (키워드): 클릭X회, 비용$Y, 매출$0 → 중단
-- 예상 절감: $Z/일
-
-[입찰가 대폭 감액] (살릴 수 있는 것)
-- (키워드): 현재 $X → $Y로 감액 (이유: 전환 가능성은 있지만 CPC가 높음)
-
-[상품별 판단]
-- (ASIN): 광고 계속 vs 중단, CVR과 연계 판단
-- CVR 낮으면 → 광고 중단 + 리스팅 개선 먼저
-
-[총 예상 절감 효과]
-- 월 광고비 $X → $Y로 절감 (Z% 감소)
-- 예상 ACOS 변화: X% → Y%`},
+  all:{label:"📊 종합 분석",color:"#3B82F6",desc:"캠페인별/상품별 구체적 액션 + 크로스셀"},
+  new:{label:"🚀 신상품 런칭",color:"#8B5CF6",desc:"노출 확보, 랭킹 진입"},
+  best:{label:"👑 베스트셀러 방어",color:"#F59E0B",desc:"ACOS 최적화, 수익 극대화"},
+  clearance:{label:"🏷️ 재고 정리",color:"#EC4899",desc:"구형 모델 소진, 손절 판단"},
+  conquest:{label:"🎯 경쟁사 공략",color:"#06B6D4",desc:"브랜드/ASIN 타겟"},
+  seasonal:{label:"📅 시즌 대비",color:"#F97316",desc:"프라임데이, 블프, iPhone"},
+  turnaround:{label:"🔄 적자 전환",color:"#EF4444",desc:"ACOS 100%+ 살릴지 죽일지"},
 };
 
+const AI_PROMPT_BASE=`아마존 PPC 전문가로서 분석하세요.
+
+각 캠페인에 purpose(목적) 필드가 있습니다. 목적별 ACOS 기준:
+- launch: ACOS 높아도 OK (노출 우선)
+- bestseller: ACOS 30% 이하 엄격
+- clearance: 회전율 우선
+- conquest: ACOS 높은 게 정상
+- "미지정": 데이터로 추론 (추론이라고 명시)
+
+또한 "크로스셀 데이터"가 포함되어 있습니다. 광고한 ASIN과 다른 ASIN이 구매된 패턴입니다.
+이를 활용해서 번들 상품, 연관 광고 캠페인, 키워드 확장 기회를 제안하세요.
+
+반드시 다음 형식으로 답변 (한국어, 마크다운 없이):
+
+[캠페인별 예산 조정]
+- (캠페인명) (목적): 현재 → 권장, 이유
+
+[키워드 입찰 조정]
+증액: (키워드) $X → $Y (이유)
+감액: (키워드) $X → $Y (이유)
+중단: (키워드) (이유)
+
+[새 키워드 추가] 3~5개
+- (키워드) / 매치타입 / 시작 입찰가 / 근거
+
+[네거티브 키워드] 검색어 기반
+- (검색어): 비용 $X, 전환 0
+
+[크로스셀 기회 활용]
+- (광고ASIN → 구매ASIN): 이 패턴을 활용한 구체적 액션
+
+[7일 후 확인 KPI] 2가지`;
+
 async function runAi(){
-  if(aiState.loading)return;aiState.loading=true;renderAi(document.getElementById("sec-ai"));
-  const mode=AI_MODES[aiState.mode];const daily=dailyAd(S.campaign);const kws=kwTotals(S.campaign);const camps=campTotals(S.campaign);const adA=asinAdTotals(S.ap);const trA=asinTraffic(S.br);
-
-  // Merge product ad + traffic
-  const prodMerged={};
-  adA.forEach(a=>{prodMerged[a.asin]={asin:a.asin,sku:a.sku,adCost:+a.cost.toFixed(1),adSales:+a.sales.toFixed(0),adPur:a.pur,acos:+a.acos.toFixed(0),sess:0,cvr:0,bbox:0}});
-  trA.forEach(a=>{if(!prodMerged[a.asin])prodMerged[a.asin]={asin:a.asin,sku:"",adCost:0,adSales:0,adPur:0,acos:0,sess:0,cvr:0,bbox:0};
-    prodMerged[a.asin].title=a.title;prodMerged[a.asin].sess=a.sess;prodMerged[a.asin].cvr=+a.cvr.toFixed(1);prodMerged[a.asin].bbox=+a.bbox.toFixed(0)});
-
-  // Build search term summary
-  const stByQ={};S.st.forEach(s=>{if(!stByQ[s.query])stByQ[s.query]={q:s.query,cost:0,sales:0,clk:0};stByQ[s.query].cost+=s.cost;stByQ[s.query].sales+=s.sales;stByQ[s.query].clk+=s.clk});
-  const stWaste=Object.values(stByQ).filter(s=>s.cost>0&&s.sales===0).sort((a,b)=>b.cost-a.cost).slice(0,10);
+  if(aiState.loading)return;aiState.loading=true;rAi(document.getElementById("sec-ai"));
+  const camps=S.camp.filter(c=>c.date===[...new Set(S.camp.map(r=>r.date))].sort().pop());
+  const kws=kwTotals(S.tgt);const pairs=crossSellAnalysis(S.pp);
+  const stByQ={};S.st.forEach(s=>{if(!stByQ[s.query])stByQ[s.query]={q:s.query,spend:0,sales:0,clk:0};stByQ[s.query].spend+=s.spend;stByQ[s.query].sales+=s.sales;stByQ[s.query].clk+=s.clk});
+  const stWaste=Object.values(stByQ).filter(s=>s.spend>0&&s.sales===0).sort((a,b)=>b.spend-a.spend).slice(0,10);
 
   const ctx={
-    summary:{days:[...new Set(S.campaign.map(r=>r.date))].length,totalCost:+sm(daily.map(d=>d.cost)).toFixed(0),totalSales:+sm(daily.map(d=>d.sales)).toFixed(0),
-      totalPur:sm(daily.map(d=>d.pur)),acos:sm(daily.map(d=>d.sales))>0?+(sm(daily.map(d=>d.cost))/sm(daily.map(d=>d.sales))*100).toFixed(1):0},
-    campaigns:camps.map(c=>({name:c.name,purpose:c.purpose||"미지정",kwCount:c.kwCount,cost:+c.cost.toFixed(0),sales:+c.sales.toFixed(0),acos:+c.acos.toFixed(0),ctr:+c.ctr.toFixed(2),budgetIssue:c.budget})),
-    allKeywords:kws.map(k=>({keyword:k.kw,campaign:k.camp,matchType:k.mt,currentBid:k.bid,suggestedBid:k.sug,impressions:k.imp,clicks:k.clk,purchases:k.pur,cost:+k.cost.toFixed(1),sales:+k.sales.toFixed(0),acos:+k.acos.toFixed(0),budgetIssue:k.budget})),
-    products:Object.values(prodMerged).sort((a,b)=>(b.adSales||0)-(a.adSales||0)).slice(0,12),
-    wasteSearchTerms:stWaste.map(s=>({query:s.q,clicks:s.clk,cost:+s.cost.toFixed(2),sales:0})),
+    campaigns:camps.map(c=>({name:c.name,purpose:c.purpose||"미지정",type:c.type,status:c.status,budget:c.budget,
+      acos:(c.acos*100).toFixed(0)+"%",sales:+c.sales.toFixed(0),cost:+c.cost.toFixed(0),imp:c.imp,clk:c.clk,tos:c.tos})),
+    keywords:kws.slice(0,15).map(k=>({keyword:k.kw,campaign:k.camp,matchType:k.mt,impressions:k.imp,clicks:k.clk,
+      spend:+k.spend.toFixed(1),sales:+k.sales.toFixed(0),acos:k.acos.toFixed(0)+"%",otherSales:+k.otherSales.toFixed(0)})),
+    wasteKeywords:kws.filter(k=>k.clk>=3&&k.sales===0).slice(0,10).map(k=>({kw:k.kw,clk:k.clk,spend:+k.spend.toFixed(1)})),
+    wasteSearchTerms:stWaste.map(s=>({query:s.q,clicks:s.clk,spend:+s.spend.toFixed(2)})),
+    crossSell:pairs.slice(0,10).map(p=>({advertised:p.advAsin,purchased:p.purAsin,orders:p.orders,sales:+p.sales.toFixed(0),keywords:[...p.kws].slice(0,3)})),
+    trafficCVR:S.br.length?av(S.br.filter(r=>r.cvr>0).map(r=>r.cvr)).toFixed(1)+"% avg":"N/A"
   };
+  const modeLabel=AI_MODES[aiState.mode].label;
   try{const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,
-      messages:[{role:"user",content:mode.prompt+`\n\n중요: 각 캠페인에 purpose(목적) 필드가 있습니다. 목적에 따라 성과 기준이 다릅니다:
-- launch(런칭): ACOS 높아도 OK, 노출/클릭 볼륨이 핵심
-- bestseller(베스트셀러): ACOS 30% 이하, 수익 극대화
-- clearance(재고정리): 회전율 우선, 마진보다 소진 속도
-- conquest(경쟁사): ACOS 자연적으로 높음, 브랜드 인지도 기준
-- seasonal(시즌): 이벤트 전 공격적, 이벤트 후 정상화
-- defense(방어): 오가닉 순위 방어, 최소 광고비
-- "미지정": 데이터 기반으로 추론하되, 추론이라고 명시
-
-캠페인별 목적에 맞는 기준으로 예산/입찰가/키워드를 판단하세요.
-한국어, 마크다운 없이 일반 텍스트.\n\n데이터:\n`+JSON.stringify(ctx,null,1)}]})});
+      messages:[{role:"user",content:`${modeLabel} 관점에서 분석.\n\n${AI_PROMPT_BASE}\n\n데이터:\n${JSON.stringify(ctx,null,1)}`}]})});
     const d=await r.json();aiState.result=d.content?.map(c=>c.text||"").join("")||"실패";
   }catch(e){aiState.result="오류: "+e.message}
-  aiState.loading=false;LS.set("aiR",aiState.result);LS.set("aiM",aiState.mode);renderAi(document.getElementById("sec-ai"));
+  aiState.loading=false;LS.set("aiR",aiState.result);LS.set("aiM",aiState.mode);rAi(document.getElementById("sec-ai"));
 }
 
-function renderAi(el){if(!el)return;
-  let html=`<div class="card"><div style="font-size:13px;font-weight:700;margin-bottom:10px">전략 유형 선택</div><div style="display:flex;flex-direction:column;gap:5px">`;
+function rAi(el){if(!el)return;
+  let html=`<div class="card"><div style="font-size:13px;font-weight:700;margin-bottom:10px">전략 유형</div><div style="display:flex;flex-direction:column;gap:5px">`;
   Object.entries(AI_MODES).forEach(([k,m])=>{const sel=aiState.mode===k;
     html+=`<div style="padding:9px;border-radius:8px;border:2px solid ${sel?m.color:"var(--bd)"};background:${sel?m.color+"15":"transparent"};cursor:pointer"
-      onclick="aiState.mode='${k}';renderAi(document.getElementById('sec-ai'))">
+      onclick="aiState.mode='${k}';rAi(document.getElementById('sec-ai'))">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div><div style="font-size:11px;font-weight:700;color:${sel?m.color:"var(--tx)"}">${m.label}</div>
           <div style="font-size:9px;color:var(--mt)">${m.desc}</div></div>
         <div style="width:14px;height:14px;border-radius:50%;border:2px solid ${sel?m.color:"var(--bd)"};display:flex;align-items:center;justify-content:center">
           ${sel?`<div style="width:7px;height:7px;border-radius:50%;background:${m.color}"></div>`:""}</div></div></div>`});
   html+=`</div></div>`;
-  const mode=AI_MODES[aiState.mode];const has=S.campaign.length>0;
+  const mode=AI_MODES[aiState.mode];const has=S.camp.length>0;
   html+=`<div class="card"><button onclick="runAi()" ${!has||aiState.loading?"disabled":""} style="width:100%;padding:12px;border-radius:10px;border:none;
     background:linear-gradient(135deg,${mode.color},${mode.color}99);color:#fff;font-size:13px;font-weight:700;opacity:${has?1:.5}">
     ${aiState.loading?'<span class="spinner"></span>분석 중...':'🤖 '+mode.label+' 분석'}</button></div>`;
@@ -613,50 +467,35 @@ function renderAi(el){if(!el)return;
   el.innerHTML=html;
 }
 
-// ══════════════════════════════════════
-// TAB 6: 설정
-// ══════════════════════════════════════
-function renderSettings(el){
+// ═══ TAB: Settings ═══
+function rSettings(el){
   let html=`<div class="card"><div style="font-size:13px;font-weight:700;margin-bottom:6px">연결 상태</div>
     <div style="font-size:10px;color:#64748B;margin-bottom:8px;word-break:break-all">ID: ${S.sheetId}</div>`;
-  [{n:"campaign",ok:S.sync.campaign,cnt:S.campaign.length,d:[...new Set(S.campaign.map(r=>r.date))].length},
-   {n:"advertised_product",ok:S.sync.advertised_product,cnt:S.ap.length,d:[...new Set(S.ap.map(r=>r.date))].length},
-   {n:"search_terms",ok:S.sync.search_terms,cnt:S.st.length,d:[...new Set(S.st.map(r=>r.date))].length},
-   {n:"business_report",ok:S.sync.business_report,cnt:S.br.length,d:[...new Set(S.br.map(r=>r.date))].length}].forEach(s=>{
-    html+=`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd);font-size:10px">
-      <div><b>${s.n}</b> <span style="color:#64748B">${s.ok?s.cnt+"행·"+s.d+"일":"없음"}</span></div><span class="dot ${s.ok?"ok":"no"}"></span></div>`});
+  [{n:"campaign",ok:S.sync.campaign,cnt:S.camp.length,f:"매일"},{n:"targeting",ok:S.sync.targeting,cnt:S.tgt.length,f:"주간"},
+   {n:"search_terms",ok:S.sync.search_terms,cnt:S.st.length,f:"주간"},{n:"business_report",ok:S.sync.business_report,cnt:S.br.length,f:"매일"},
+   {n:"purchased_product",ok:S.sync.purchased_product,cnt:S.pp.length,f:"주간"}].forEach(s=>{
+    html+=`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:10px">
+      <div><b>${s.n}</b> <span style="color:var(--mt)">${s.ok?s.cnt+"행":"없음"}</span></div>
+      <div><span style="font-size:8px;color:${s.f==="매일"?"#EF4444":"#F59E0B"};margin-right:4px">${s.f}</span><span class="dot ${s.ok?"ok":"no"}"></span></div></div>`});
   if(S.lastSync)html+=`<div style="font-size:9px;color:#64748B;margin-top:8px">마지막: ${S.lastSync}</div>`;html+=`</div>`;
 
-  html+=`<div class="card" style="background:rgba(16,185,129,0.03);border-color:rgba(16,185,129,0.1)">
-    <div style="font-size:11px;font-weight:700;color:#10B981;margin-bottom:6px">📋 매일 1분 루틴</div>
+  html+=`<div class="card" style="background:rgba(239,68,68,0.03);border-color:rgba(239,68,68,0.1)">
+    <div style="font-size:11px;font-weight:700;color:#EF4444;margin-bottom:6px">📋 매일 1분 루틴 (2개 탭)</div>
     <div style="font-size:10px;color:#64748B;line-height:1.8">
-    <b>1.</b> 셀러센트럴 → 리포트 → 어제 CSV 4개 다운<br>
-    <b>2.</b> 구글시트 각 탭 <b>맨 아래에</b> 붙여넣기<br>
-    <b>3.</b> 🔄 동기화<br><br>
-    <b style="color:var(--tx)">탭별 리포트 출처:</b><br>
-    • campaign: SP Targeting Report (캠페인명 포함)<br>
-    • advertised_product: SP Advertised Product Report<br>
-    • search_terms: Search Term Report<br>
-    • business_report: Detail Page Sales & Traffic by Child ASIN</div></div>`;
+    <b>campaign:</b> 셀러센트럴 → 광고 → 캠페인 → 내보내기(CSV)<br>
+    &nbsp;&nbsp;→ A열 Date, B열 Purpose 수동 입력 후 C열부터 붙여넣기<br>
+    <b>business_report:</b> 리포트 → 비즈니스보고서 → By ASIN → Detail Page by Child → 어제<br>
+    &nbsp;&nbsp;→ A열 Date 수동 입력 후 B열부터 붙여넣기</div></div>`;
 
-  html+=`<div class="card" style="background:rgba(139,92,246,0.03);border-color:rgba(139,92,246,0.1)">
-    <div style="font-size:11px;font-weight:700;color:#8B5CF6;margin-bottom:6px">🎯 캠페인 목적 설정 (Purpose 컬럼)</div>
+  html+=`<div class="card" style="background:rgba(245,158,11,0.03);border-color:rgba(245,158,11,0.1)">
+    <div style="font-size:11px;font-weight:700;color:#F59E0B;margin-bottom:6px">📋 주간 5분 루틴 (3개 탭)</div>
     <div style="font-size:10px;color:#64748B;line-height:1.8">
-    campaign 탭에 <b>Purpose</b> 컬럼을 추가하면<br>
-    AI가 캠페인 목적에 맞는 기준으로 분석합니다.<br><br>
-    <b style="color:var(--tx)">사용 가능한 값:</b><br>
-    • <span style="color:#8B5CF6;font-weight:600">launch</span> — 신상품 런칭 (ACOS 높아도 OK)<br>
-    • <span style="color:#F59E0B;font-weight:600">bestseller</span> — 수익 극대화 (ACOS 30% 기준)<br>
-    • <span style="color:#EC4899;font-weight:600">clearance</span> — 재고 정리 (회전율 우선)<br>
-    • <span style="color:#06B6D4;font-weight:600">conquest</span> — 경쟁사 공략 (ACOS 높은 게 정상)<br>
-    • <span style="color:#F97316;font-weight:600">seasonal</span> — 시즌 이벤트용<br>
-    • <span style="color:#3B82F6;font-weight:600">defense</span> — 오가닉 순위 방어<br><br>
-    같은 캠페인의 모든 행에 같은 값을 넣으면 됩니다.<br>
-    비워두면 AI가 데이터로 추론합니다 (정확도↓).</div></div>`;
+    <b>targeting:</b> 광고 → 리포트 → SP Targeting (Daily) → 관련 캠페인 필터 → 붙여넣기<br>
+    <b>search_terms:</b> 광고 → 리포트 → SP Search Term (Daily) → 관련 캠페인 필터<br>
+    <b>purchased_product:</b> 광고 → 리포트 → SP 구매한상품 → 관련 캠페인 필터</div></div>`;
 
-  html+=`<div class="card"><div style="font-size:11px;font-weight:700;color:#F59E0B;margin-bottom:6px">⚠ 동기화 안 될 때</div>
-    <div style="font-size:10px;color:#64748B;line-height:1.8">• <b>파일 → 공유 → 웹에 게시 → 게시</b><br>
-    • 탭 이름 정확히: campaign, advertised_product, search_terms, business_report</div></div>`;
+  html+=`<div class="card"><div style="font-size:11px;font-weight:700;color:#8B5CF6;margin-bottom:6px">🎯 Purpose(목적) 값</div>
+    <div style="font-size:10px;color:#64748B;line-height:1.6">campaign 탭 B열에 입력: launch / bestseller / clearance / conquest / seasonal / defense</div></div>`;
 
   el.innerHTML=html;
   const btn=document.createElement("button");btn.textContent="🔌 연결 해제 & 초기화";
@@ -665,12 +504,10 @@ function renderSettings(el){
 }
 
 function showDashboard(){document.getElementById("setup").style.display="none";document.getElementById("dashboard").style.display="block";renderHeader();renderTabs();renderTab()}
-
-// ═══ INIT ═══
 (function(){
   aiState.result=LS.get("aiR","");aiState.mode=LS.get("aiM","all");
   const id=LS.get("id","");
-  if(id){S.sheetId=id;S.campaign=LS.get("c",[]);S.ap=LS.get("a",[]);S.st=LS.get("s",[]);S.br=LS.get("b",[]);
+  if(id){S.sheetId=id;S.camp=LS.get("c",[]);S.tgt=LS.get("t",[]);S.st=LS.get("s",[]);S.br=LS.get("b",[]);S.pp=LS.get("p",[]);
     S.sync=LS.get("sync",S.sync);S.lastSync=LS.get("last","");showDashboard();
     syncAll(id).then(()=>{renderHeader();renderTab()})}
   else{document.getElementById("setup").style.display="block"}
