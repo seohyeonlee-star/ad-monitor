@@ -89,28 +89,54 @@ function fixD(d){const m=String(d).match(/Date\((\d+),(\d+),(\d+)\)/);return m?`
 
 // ═══ PARSERS ═══
 // campaign tab: now captures Campaign Name
-function parseC(rows){return rows.map(r=>({date:fixD(r["Date"]||""),camp:r["Campaign Name"]||r["Campaign"]||"(미지정)",
+// campaign tab: SP Targeting Report (Daily)
+// Actual Amazon columns: Date, Portfolio name, Campaign Name, Ad Group Name, Targeting, Match Type, Customer Search Term, State, Suggested bid..., Bid, Impressions, Top-of-search impression share, Clicks, CTR, Total cost, CPC, Purchases, Sales, ACOS, ROAS
+function parseC(rows){return rows.map(r=>({date:fixD(r["Date"]||""),
+  camp:r["Campaign Name"]||r["Campaign"]||"(미지정)",
   purpose:r["Purpose"]||r["목적"]||"",
-  kw:r["Keyword"]||"",mt:r["Target match type"]||r["Match Type"]||"",
-  bid:pn(r["Bid (USD)"]||r["Bid"]),sug:pn(r["Suggested bid (median)(USD)"]||r["Suggested Bid"]),
-  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),cost:pn(r["Total cost (USD)"]||r["Spend"]),
-  pur:pn(r["Purchases"]||r["Orders"]),sales:pn(r["Sales (USD)"]||r["Sales"]),status:r["Status"]||""})).filter(r=>r.kw)}
+  kw:r["Targeting"]||r["Keyword"]||"",
+  mt:r["Match Type"]||r["Target match type"]||"",
+  bid:pn(r["Bid (USD)"]||r["Bid"]),
+  sug:pn(r["Suggested bid (median)(USD)"]||r["Suggested Bid"]),
+  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),
+  tos:r["Top-of-search impression share"]||"",
+  cost:pn(r["Total cost (USD)"]||r["Spend"]),
+  pur:pn(r["Purchases"]||r["7 Day Total Orders"]||r["Orders"]),
+  sales:pn(r["Sales (USD)"]||r["7 Day Total Sales"]||r["Sales"]),
+  status:r["State"]||r["Status"]||""})).filter(r=>r.kw)}
 
-// advertised_product tab: ASIN-level ad performance
-function parseAP(rows){return rows.map(r=>({date:fixD(r["Date"]||""),camp:r["Campaign Name"]||r["Campaign"]||"",
-  asin:r["Advertised ASIN"]||r["ASIN"]||"",sku:r["Advertised SKU"]||r["SKU"]||"",
-  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),cost:pn(r["Total cost (USD)"]||r["Spend"]),
-  pur:pn(r["Purchases"]||r["Orders"]),sales:pn(r["Sales (USD)"]||r["Sales"])})).filter(r=>r.asin)}
+// advertised_product tab: SP Advertised Product Report (Daily)
+// Actual: Date, Portfolio name, Campaign Name, Ad Group Name, Advertised SKU, Advertised ASIN, Impressions, Clicks, CTR, Total cost, CPC, Purchases, Sales, ACOS, ROAS
+function parseAP(rows){return rows.map(r=>({date:fixD(r["Date"]||""),
+  camp:r["Campaign Name"]||r["Campaign"]||"",
+  asin:r["Advertised ASIN"]||r["ASIN"]||"",
+  sku:r["Advertised SKU"]||r["SKU"]||"",
+  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),
+  cost:pn(r["Total cost (USD)"]||r["Spend"]),
+  pur:pn(r["Purchases"]||r["7 Day Total Orders"]||r["Orders"]),
+  sales:pn(r["Sales (USD)"]||r["7 Day Total Sales"]||r["Sales"])})).filter(r=>r.asin)}
 
-function parseST(rows){return rows.map(r=>({date:fixD(r["Date"]||""),query:r["Customer Search Term"]||r["Search Term"]||"",
-  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),cost:pn(r["Spend"]||r["Total cost (USD)"]),
-  sales:pn(r["7 Day Total Sales"]||r["Sales"]),orders:pn(r["7 Day Total Orders"]||r["Orders"])})).filter(r=>r.query)}
+// search_terms tab: SP Search Term Report (Daily)
+// Actual: Date, Portfolio name, Campaign Name, Ad Group Name, Targeting, Match Type, Customer Search Term, Impressions, Clicks, CTR, Total cost, CPC, 7 Day Total Orders, 7 Day Total Sales, 7 Day Total Units, ACOS, ROAS
+function parseST(rows){return rows.map(r=>({date:fixD(r["Date"]||""),
+  query:r["Customer Search Term"]||r["Search Term"]||"",
+  kw:r["Targeting"]||r["Keyword"]||"",
+  camp:r["Campaign Name"]||"",
+  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),
+  cost:pn(r["Total cost (USD)"]||r["Spend"]),
+  sales:pn(r["7 Day Total Sales"]||r["Sales (USD)"]||r["Sales"]),
+  orders:pn(r["7 Day Total Orders"]||r["Purchases"]||r["Orders"])})).filter(r=>r.query)}
 
-function parseBR(rows){return rows.map(r=>({date:fixD(r["Date"]||""),asin:r["(Child) ASIN"]||r["ASIN"]||"",title:r["Title"]||"",
-  sessions:pn(r["Sessions"]||r["Sessions - Total"]),pv:pn(r["Page Views"]||r["Page Views - Total"]),
-  units:pn(r["Units Ordered"]||r["Units Ordered - Total"]),sales:pn(r["Ordered Product Sales"]),
+// business_report tab: Detail Page Sales and Traffic by Child Item
+// Actual: Date, (Child) ASIN, Title, Sessions - Total, Session Percentage - Total, Page Views - Total, Page Views Percentage - Total, Featured Offer (Buy Box) Percentage, Units Ordered, Units Ordered - B2B, Unit Session Percentage, Unit Session Percentage - B2B, Ordered Product Sales, Ordered Product Sales - B2B
+function parseBR(rows){return rows.map(r=>({date:fixD(r["Date"]||""),
+  asin:r["(Child) ASIN"]||r["ASIN"]||"",title:r["Title"]||"",
+  sessions:pn(r["Sessions - Total"]||r["Sessions"]),
+  pv:pn(r["Page Views - Total"]||r["Page Views"]),
+  units:pn(r["Units Ordered"]||r["Units Ordered - Total"]),
+  sales:pn(r["Ordered Product Sales"]||r["Ordered Product Sales - Total"]),
   cvr:pn(r["Unit Session Percentage"]||r["Unit Session Percentage - Total"]),
-  bbox:pn(r["Buy Box Percentage"]||r["Featured Offer (Buy Box) Percentage"])})).filter(r=>r.asin)}
+  bbox:pn(r["Featured Offer (Buy Box) Percentage"]||r["Buy Box Percentage"])})).filter(r=>r.asin)}
 
 // ═══ ANALYSIS ═══
 function dailyAd(data){const by={};data.forEach(r=>{if(!r.date)return;if(!by[r.date])by[r.date]={date:r.date,cost:0,sales:0,imp:0,clk:0,pur:0};
