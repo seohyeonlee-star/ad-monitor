@@ -123,11 +123,13 @@ function parseST(rows){return rows.map(r=>({
 })).filter(r=>r.query)}
 
 // business_report tab: from Business Report CSV (Date manual)
+// Note: Google Sheets JSONP returns percentages as decimals (44.2% → 0.442)
+function pnPct(s){let v=pn(s);if(v>0&&v<=1)v=v*100;return v}// auto-detect: if ≤1, it's decimal format
 function parseBR(rows){return rows.map(r=>({
   date:fixD(r["Date"]||""),asin:r["(Child) ASIN"]||"",title:r["Title"]||"",
   sessions:pn(r["Sessions - Total"]),pv:pn(r["Page Views - Total"]),
-  bbox:pn(r["Featured Offer (Buy Box) Percentage"]),
-  units:pn(r["Units Ordered"]),cvr:pn(r["Unit Session Percentage"]),
+  bbox:pnPct(r["Featured Offer (Buy Box) Percentage"]),
+  units:pn(r["Units Ordered"]),cvr:pnPct(r["Unit Session Percentage"]),
   sales:pn(r["Ordered Product Sales"])
 })).filter(r=>r.asin)}
 
