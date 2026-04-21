@@ -222,7 +222,30 @@ function rOverview(el){
     <div>구매 ${latest.pur}건 ${chgB(pctCh(latest.pur,prev.pur))}</div></div></div>`}
   if(budgetIssues>0)html+=`<div class="alert warn">⚠ ${budgetIssues}개 캠페인 예산 소진</div>`;
   if(crossPairs.length>0)html+=`<div class="alert good">💡 크로스셀 ${crossPairs.length}건 → 크로스셀 탭</div>`;
-  html+=`<div class="g2">${kpi("광고 매출","$"+tSales.toFixed(0),(daily.length||"-")+"일·"+tPur+"건","#10B981")}${kpi("광고비","$"+tCost.toFixed(0),"ACOS "+acos.toFixed(0)+"%",acos>30?"#EF4444":"#10B981")}</div>`;
+
+  // Period selector
+  const allDates=[...new Set(S.camp.map(r=>r.date))].sort();
+  const periods=[{id:"all",l:"전체"},{id:"7",l:"7일"},{id:"14",l:"14일"},{id:"30",l:"30일"}];
+  if(!window._adPeriod)window._adPeriod="all";
+  html+=`<div style="display:flex;gap:3px;margin-bottom:8px;background:rgba(255,255,255,0.04);border-radius:6px;padding:2px;width:fit-content">
+    ${periods.map(p=>`<button onclick="window._adPeriod='${p.id}';renderTab()" style="padding:3px 9px;border-radius:5px;border:none;font-size:9px;font-weight:600;
+      background:${window._adPeriod===p.id?"rgba(59,130,246,0.2)":"transparent"};color:${window._adPeriod===p.id?"#3B82F6":"#64748B"}">${p.l}</button>`).join("")}</div>`;
+
+  // Filter campaigns by period
+  let filteredCamp=S.camp;
+  if(window._adPeriod!=="all"&&allDates.length>0){
+    const n=parseInt(window._adPeriod);const cutoff=allDates[Math.max(allDates.length-n,0)];
+    filteredCamp=S.camp.filter(r=>r.date>=cutoff);
+  }
+  const fDaily=campByDate(filteredCamp);
+  const fCost=sm(filteredCamp.map(r=>r.cost)),fSales=sm(filteredCamp.map(r=>r.sales)),fPur=sm(filteredCamp.map(r=>r.purchases));
+  const fAcos=fSales>0?(fCost/fSales*100):0;const fRoas=fCost>0?(fSales/fCost):0;
+  const fDates=[...new Set(filteredCamp.map(r=>r.date))].sort();
+  const dateRange=fDates.length?fDates[0]+" ~ "+fDates[fDates.length-1]:"—";
+
+  html+=`<div style="font-size:9px;color:var(--mt);margin-bottom:6px">${dateRange} (${fDates.length}일)</div>`;
+  html+=`<div class="g2">${kpi("광고 매출","$"+fSales.toFixed(0),fPur+"건","#10B981")}${kpi("광고비","$"+fCost.toFixed(0),"","#F59E0B")}
+    ${kpi("ACOS",fAcos.toFixed(0)+"%","",fAcos>30?"#EF4444":"#10B981")}${kpi("ROAS",fRoas.toFixed(2)+"x","",fRoas<3?"#F59E0B":"#10B981")}</div>`;
 
   // ASIN Search
   html+=`<div class="card" style="padding:12px"><div style="font-size:12px;font-weight:700;margin-bottom:8px">상품 성과 스포트라이트</div>
@@ -243,14 +266,9 @@ function rOverview(el){
         <div style="font-size:10px;color:var(--mt);margin-bottom:12px">${selAsin}
         <span onclick="selAsin='';renderTab()" style="cursor:pointer;color:var(--rd);margin-left:8px;font-size:9px">✕ 닫기</span></div>`;
       // KPIs
-      html+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px;margin-bottom:14px">
-        ${[{l:"세션",v:ai.sess.toLocaleString(),c:"#3B82F6"},{l:"페이지뷰",v:sm(aData.map(r=>r.pv)).toLocaleString()||"-",c:"#8B5CF6"},
-          {l:"전환율",v:ai.cvr.toFixed(1)+"%",c:ai.cvr>10?"#10B981":ai.cvr>5?"#F59E0B":"#EF4444"},{l:"주문",v:""+ai.units,c:"#10B981"}
+      html+=`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:14px">
+        ${[{l:"세션",v:ai.sess.toLocaleString(),c:"#3B82F6"},{l:"전환율",v:ai.cvr.toFixed(1)+"%",c:ai.cvr>10?"#10B981":ai.cvr>5?"#F59E0B":"#EF4444"},{l:"주문",v:""+ai.units,c:"#10B981"}
         ].map(k=>`<div style="text-align:center;padding:8px;background:${k.c}10;border-radius:8px"><div style="font-size:8px;color:var(--mt)">${k.l}</div><div style="font-size:15px;font-weight:800;color:${k.c}">${k.v}</div></div>`).join("")}</div>`;
-      // Buy Box bar
-      if(ai.bbox>0){const bc=ai.bbox>90?"#10B981":ai.bbox>70?"#F59E0B":"#EF4444";
-        html+=`<div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px"><span>바이박스</span><span style="color:${bc};font-weight:700">${ai.bbox.toFixed(0)}%</span></div>
-          <div style="height:6px;border-radius:3px;background:rgba(255,255,255,0.05)"><div style="height:100%;width:${ai.bbox}%;border-radius:3px;background:${bc}"></div></div></div>`}
       // Time-series chart
       const byD={};aData.forEach(r=>{if(!r.date||r.date.includes("~"))return;if(!byD[r.date])byD[r.date]={d:r.date,s:0,pv:0,u:0,sl:0};byD[r.date].s+=r.sessions;byD[r.date].pv+=r.pv;byD[r.date].u+=r.units;byD[r.date].sl+=r.sales});
       const dA=Object.values(byD).sort((a,b)=>a.d.localeCompare(b.d));
@@ -408,24 +426,40 @@ function rProduct(el){
 }
 
 // ═══ TAB: Cross-sell ═══
+let csSearch="";
 function rCrossSell(el){
   if(!S.pp.length){el.innerHTML=empty("🔀","크로스셀 데이터 대기 중","purchased_product 탭 동기화 필요<br>광고한 상품 ≠ 구매한 상품 패턴을 분석합니다");return}
-  const pairs=crossSellAnalysis(S.pp);
+  let pairs=crossSellAnalysis(S.pp);
   const totalCross=sm(pairs.map(p=>p.orders));
   const totalCrossSales=sm(pairs.map(p=>p.sales));
 
   let html=`<div class="g2">${kpi("크로스셀 패턴",""+pairs.length+"건","광고≠구매","#8B5CF6")}
     ${kpi("크로스 매출","$"+totalCrossSales.toFixed(0),totalCross+"건 주문","#10B981")}</div>`;
 
+  // ASIN Search
+  html+=`<div class="card" style="padding:12px">
+    <input id="csInput" type="text" placeholder="광고 ASIN 또는 구매 ASIN 검색..." value="${csSearch}"
+      style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);background:rgba(255,255,255,0.04);color:var(--tx);font-size:12px;font-family:inherit;outline:none"
+      oninput="csSearch=this.value;renderTab()">
+    ${csSearch?`<div style="margin-top:6px;font-size:9px;color:var(--mt)">"${csSearch}" 필터 적용 중 <span onclick="csSearch='';renderTab()" style="cursor:pointer;color:var(--rd);margin-left:6px">✕ 초기화</span></div>`:""}
+  </div>`;
+
+  // Filter by search
+  if(csSearch){
+    const q=csSearch.toUpperCase();
+    pairs=pairs.filter(p=>p.advAsin.toUpperCase().includes(q)||p.purAsin.toUpperCase().includes(q));
+    html+=`<div style="font-size:10px;color:var(--mt);margin-bottom:8px">${pairs.length}건 일치</div>`;
+  }
+
   if(pairs.length){
     html+=`<div class="card"><div style="font-size:12px;font-weight:700;margin-bottom:4px">광고한 상품 → 실제 구매한 상품</div>
-      <div style="font-size:9px;color:var(--mt);margin-bottom:8px">고객이 광고를 클릭했지만 다른 상품을 구매한 패턴. 번들/연관 광고 기회</div>`;
-    pairs.slice(0,20).forEach(p=>{
+      <div style="font-size:9px;color:var(--mt);margin-bottom:8px">구매 ASIN 클릭 시 아마존 상품 페이지로 이동</div>`;
+    pairs.slice(0,30).forEach(p=>{
       html+=`<div style="padding:8px 0;border-bottom:1px solid var(--bd)">
-        <div style="display:flex;align-items:center;gap:6px;font-size:10px">
-          <span style="background:rgba(59,130,246,0.1);padding:2px 6px;border-radius:4px;font-size:9px;color:#3B82F6">${p.advAsin}</span>
+        <div style="display:flex;align-items:center;gap:6px;font-size:10px;flex-wrap:wrap">
+          <a href="https://www.amazon.com/dp/${p.advAsin}" target="_blank" rel="noopener" style="background:rgba(59,130,246,0.1);padding:2px 6px;border-radius:4px;font-size:9px;color:#3B82F6;text-decoration:none">${p.advAsin}</a>
           <span style="color:var(--mt)">→</span>
-          <span style="background:rgba(16,185,129,0.1);padding:2px 6px;border-radius:4px;font-size:9px;color:#10B981;font-weight:600">${p.purAsin}</span>
+          <a href="https://www.amazon.com/dp/${p.purAsin}" target="_blank" rel="noopener" style="background:rgba(16,185,129,0.1);padding:2px 6px;border-radius:4px;font-size:9px;color:#10B981;font-weight:600;text-decoration:none">${p.purAsin} ↗</a>
           <span style="margin-left:auto;font-weight:700;color:#10B981">${p.orders}건${p.sales>0?" · $"+p.sales.toFixed(0):""}</span>
         </div>
         ${p.kws.size>0?`<div style="font-size:8px;color:var(--mt);margin-top:3px">키워드: ${[...p.kws].slice(0,3).join(", ")}${p.kws.size>3?" 외 "+(p.kws.size-3)+"개":""}</div>`:""}
