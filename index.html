@@ -360,7 +360,7 @@ const AI_PROMPT=`아마존 PPC 전문가. 캠페인 purpose별 기준: launch=AC
 async function runAi(){
   if(aiState.loading)return;
   const apiKey=LS.get("apiKey","");
-  if(!apiKey){alert("API Key가 없습니다. 📋 프롬프트 복사 버튼을 사용하거나, ⚙️ 설정에서 API Key를 입력하세요.");return}
+  if(!apiKey){alert("API Key가 없습니다. 📋 프롬프트 복사를 사용하거나, ⚙️ 설정에서 API Key를 입력하세요.");return}
   aiState.loading=true;rAi(document.getElementById("sec-ai"));
   const prompt=buildAiPrompt();
   try{const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
@@ -374,54 +374,118 @@ async function runAi(){
   aiState.loading=false;LS.set("aiR",aiState.result);LS.set("aiM",aiState.mode);rAi(document.getElementById("sec-ai"));
 }
 
+function getSelectedCamps(){
+  if(!aiState.selCamps||!aiState.selCamps.length)return S.camp;
+  return S.camp.filter(r=>aiState.selCamps.includes(r.name));
+}
+
 function buildAiPrompt(){
-  const camps=S.camp.filter(c=>c.date===[...new Set(S.camp.map(r=>r.date))].sort().pop());
-  const kws=kwTotals(S.tgt);const pairs=crossSellAnalysis(S.pp);
-  const ctx={campaigns:camps.slice(0,15).map(c=>({name:c.name,purpose:c.purpose||"미지정",sales:+c.sales.toFixed(0),cost:+c.cost.toFixed(0),acos:(c.acos*100).toFixed(0)+"%",imp:c.imp,clk:c.clk})),
-    keywords:kws.slice(0,12).map(k=>({kw:k.kw,camp:k.camp,spend:+k.spend.toFixed(1),sales:+k.sales.toFixed(0),acos:k.acos.toFixed(0)+"%"})),
-    waste:kws.filter(k=>k.clk>=3&&k.sales===0).slice(0,8).map(k=>({kw:k.kw,clk:k.clk,spend:+k.spend.toFixed(1)})),
+  const filtered=getSelectedCamps();
+  const latestDate=[...new Set(filtered.map(r=>r.date))].sort().pop()||"";
+  const camps=filtered.filter(c=>c.date===latestDate);
+  const selNames=new Set(camps.map(c=>c.name));
+  const kws=kwTotals(S.tgt.filter(t=>selNames.has(t.camp)));
+  const sts=S.st.filter(s=>selNames.has(s.camp));
+  const stByQ={};sts.forEach(s=>{if(!stByQ[s.query])stByQ[s.query]={q:s.query,spend:0,sales:0,clk:0};stByQ[s.query].spend+=s.spend;stByQ[s.query].sales+=s.sales;stByQ[s.query].clk+=s.clk});
+  const stWaste=Object.values(stByQ).filter(s=>s.spend>0&&s.sales===0).sort((a,b)=>b.spend-a.spend).slice(0,10);
+  const pairs=crossSellAnalysis(S.pp.filter(p=>selNames.has(p.camp)));
+  const ctx={
+    selectedCampaigns:camps.map(c=>({name:c.name,purpose:c.purpose||"미지정",sales:+c.sales.toFixed(0),cost:+c.cost.toFixed(0),acos:(c.acos*100).toFixed(0)+"%",imp:c.imp,clk:c.clk})),
+    keywords:kws.slice(0,15).map(k=>({kw:k.kw,camp:k.camp,spend:+k.spend.toFixed(1),sales:+k.sales.toFixed(0),acos:k.acos.toFixed(0)+"%"})),
+    wasteKeywords:kws.filter(k=>k.clk>=3&&k.sales===0).slice(0,10).map(k=>({kw:k.kw,camp:k.camp,clk:k.clk,spend:+k.spend.toFixed(1)})),
+    wasteSearchTerms:stWaste.map(s=>({query:s.q,clicks:s.clk,spend:+s.spend.toFixed(2)})),
     crossSell:pairs.slice(0,8).map(p=>({adv:p.advAsin,pur:p.purAsin,orders:p.orders})),
-    cvr:S.br.length?av(S.br.filter(r=>r.cvr>0).map(r=>r.cvr)).toFixed(1)+"%":"N/A"};
+    avgCVR:S.br.length?av(S.br.filter(r=>r.cvr>0).map(r=>r.cvr)).toFixed(1)+"%":"N/A"};
   return AI_MODES[aiState.mode].l+" 관점.\n"+AI_PROMPT+"\n\n데이터:\n"+JSON.stringify(ctx,null,1);
 }
 
 function copyPrompt(){
   if(!S.camp.length){alert("데이터가 없습니다. 먼저 동기화하세요.");return}
   const prompt=buildAiPrompt();
-  navigator.clipboard.writeText(prompt).then(()=>{
-    const btn=document.getElementById("copyBtn");
-    if(btn){btn.textContent="✅ 복사됨! Claude.ai에 붙여넣기";btn.style.background="rgba(16,185,129,0.2)";btn.style.color="#10B981";
-      setTimeout(()=>{btn.textContent="📋 프롬프트 복사 (Claude.ai용)";btn.style.background="rgba(255,255,255,0.06)";btn.style.color="var(--tx)"},3000)}
-  }).catch(()=>{
-    // Fallback: show prompt in a textarea
-    const el=document.getElementById("sec-ai");
-    if(el){const ta=document.createElement("textarea");ta.value=prompt;ta.style.cssText="width:100%;height:200px;background:#1E293B;color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:10px;font-size:10px;font-family:monospace;margin-top:8px";
-      el.appendChild(ta);ta.select()}
-  });
+  // Show textarea with prompt for manual copy
+  const box=document.getElementById("promptBox");
+  if(box){
+    box.style.display=box.style.display==="none"?"block":"none";
+    box.querySelector("textarea").value=prompt;
+    box.querySelector("textarea").select();
+    // Also try clipboard API
+    try{navigator.clipboard.writeText(prompt);
+      const btn=document.getElementById("copyBtn");
+      if(btn){btn.textContent="✅ 복사됨! Claude.ai에 붙여넣기";
+        setTimeout(()=>{btn.textContent="📋 프롬프트 복사 (Claude.ai용)"},3000)}
+    }catch(e){}
+  }
+}
+
+function toggleCamp(name){
+  if(!aiState.selCamps)aiState.selCamps=[];
+  const idx=aiState.selCamps.indexOf(name);
+  if(idx>=0)aiState.selCamps.splice(idx,1);else aiState.selCamps.push(name);
+  rAi(document.getElementById("sec-ai"));
 }
 
 function rAi(el){if(!el)return;
   const hasKey=!!LS.get("apiKey","");
+  if(!aiState.selCamps)aiState.selCamps=[];
+
+  // Get active campaigns
+  const dates=[...new Set(S.camp.map(r=>r.date))].sort();
+  const latestDate=dates.length?dates[dates.length-1]:"";
+  const activeCamps=S.camp.filter(r=>r.date===latestDate&&(r.status.includes("ENABLED")||r.status.includes("BUDGET")));
+  const campNames=[...new Set(activeCamps.map(c=>c.name))];
+
+  // Auto-select all if none selected
+  if(aiState.selCamps.length===0&&campNames.length)aiState.selCamps=[...campNames];
+
   let html=`<div class="card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">전략 유형</div>
     <div style="display:flex;flex-wrap:wrap;gap:4px">`;
   Object.entries(AI_MODES).forEach(([k,m])=>{const sel=aiState.mode===k;
     html+=`<button onclick="aiState.mode='${k}';rAi(document.getElementById('sec-ai'))" style="padding:5px 10px;border-radius:6px;border:2px solid ${sel?m.c:"var(--bd)"};background:${sel?m.c+"15":"transparent"};color:${sel?m.c:"var(--mt)"};font-size:10px;font-weight:600">${m.l}</button>`});
   html+=`</div></div>`;
 
-  const m=AI_MODES[aiState.mode];
+  // Campaign selector
+  if(campNames.length){
+    html+=`<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:12px;font-weight:700">분석할 캠페인 선택</div>
+      <div style="font-size:9px">
+        <span onclick="aiState.selCamps=[...document.querySelectorAll('.ai-camp')].map(e=>e.dataset.name);rAi(document.getElementById('sec-ai'))" style="cursor:pointer;color:var(--ac);margin-right:8px">전체 선택</span>
+        <span onclick="aiState.selCamps=[];rAi(document.getElementById('sec-ai'))" style="cursor:pointer;color:var(--mt)">전체 해제</span>
+      </div></div>`;
+    campNames.forEach(name=>{
+      const sel=aiState.selCamps.includes(name);
+      const c=activeCamps.find(x=>x.name===name);
+      const p=c&&c.purpose&&PURPOSE_L[c.purpose.toLowerCase()]?PURPOSE_L[c.purpose.toLowerCase()]:null;
+      html+=`<div class="ai-camp" data-name="${name}" onclick="toggleCamp('${name.replace(/'/g,"\\'")}')" 
+        style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd);cursor:pointer;font-size:10px">
+        <div style="width:16px;height:16px;border-radius:4px;border:2px solid ${sel?"#3B82F6":"var(--bd)"};background:${sel?"#3B82F6":"transparent"};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          ${sel?'<span style="color:#fff;font-size:10px;line-height:1">✓</span>':""}</div>
+        <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:${sel?600:400}">${name}</div>
+        ${p?`<span style="color:${p.c};font-size:8px;font-weight:600">${p.l}</span>`:""}
+        <span style="color:var(--mt);font-size:9px">$${c?c.sales.toFixed(0):"0"}</span>
+      </div>`;
+    });
+    html+=`<div style="margin-top:6px;font-size:9px;color:var(--ac);font-weight:600">${aiState.selCamps.length}개 선택됨</div></div>`;
+  }
 
-  // Two buttons: API + Copy
+  const m=AI_MODES[aiState.mode];
+  const canRun=S.camp.length>0&&aiState.selCamps.length>0;
+
+  // Buttons
   html+=`<div class="card">`;
   if(hasKey){
-    html+=`<button onclick="runAi()" ${!S.camp.length||aiState.loading?"disabled":""} style="width:100%;padding:12px;border-radius:10px;border:none;
-      background:linear-gradient(135deg,${m.c},${m.c}99);color:#fff;font-size:13px;font-weight:700;opacity:${S.camp.length?1:.5};margin-bottom:8px">
-      ${aiState.loading?'<span class="spinner"></span>분석 중...':'🤖 '+m.l+' AI 분석 실행'}</button>`;
+    html+=`<button onclick="runAi()" ${!canRun||aiState.loading?"disabled":""} style="width:100%;padding:12px;border-radius:10px;border:none;
+      background:linear-gradient(135deg,${m.c},${m.c}99);color:#fff;font-size:13px;font-weight:700;opacity:${canRun?1:.5};margin-bottom:8px">
+      ${aiState.loading?'<span class="spinner"></span>분석 중...':'🤖 '+m.l+' AI 분석 실행 ('+aiState.selCamps.length+'개 캠페인)'}</button>`;
   }
-  html+=`<button id="copyBtn" onclick="copyPrompt()" ${!S.camp.length?"disabled":""} style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--bd);
-    background:rgba(255,255,255,0.06);color:var(--tx);font-size:13px;font-weight:700;opacity:${S.camp.length?1:.5}">
+  html+=`<button id="copyBtn" onclick="copyPrompt()" ${!canRun?"disabled":""} style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--bd);
+    background:rgba(255,255,255,0.06);color:var(--tx);font-size:13px;font-weight:700;opacity:${canRun?1:.5}">
     📋 프롬프트 복사 (Claude.ai용)</button>`;
-  if(!hasKey)html+=`<div style="margin-top:8px;font-size:9px;color:var(--mt);line-height:1.6">💡 <b>API Key 없이도 사용 가능:</b> 프롬프트 복사 → <a href="https://claude.ai" target="_blank" style="color:#3B82F6">claude.ai</a>에 붙여넣기<br>
-    🔑 <b>자동 분석:</b> ⚙️ 설정에서 API Key 입력 시 버튼 하나로 즉시 분석 (<a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:#3B82F6">발급받기</a>, 신규 $5 무료)</div>`;
+  // Prompt textarea (hidden by default, shown on copy click)
+  html+=`<div id="promptBox" style="display:none;margin-top:8px">
+    <div style="font-size:9px;color:var(--mt);margin-bottom:4px">아래 텍스트를 전체 선택(Ctrl+A) → 복사(Ctrl+C) → <a href="https://claude.ai" target="_blank" style="color:#3B82F6">claude.ai</a>에 붙여넣기</div>
+    <textarea readonly style="width:100%;height:180px;background:#1E293B;color:#CBD5E1;border:1px solid var(--bd);border-radius:8px;padding:10px;font-size:9px;font-family:monospace;resize:vertical" onclick="this.select()"></textarea></div>`;
+  if(!hasKey)html+=`<div style="margin-top:8px;font-size:9px;color:var(--mt);line-height:1.6">💡 <b>API Key 없이:</b> 프롬프트 복사 → <a href="https://claude.ai" target="_blank" style="color:#3B82F6">claude.ai</a>에 붙여넣기<br>
+    🔑 <b>자동 분석:</b> ⚙️ 설정 → API Key 입력 (<a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:#3B82F6">발급</a>, 신규 $5 무료)</div>`;
   html+=`</div>`;
 
   if(aiState.result)html+=`<div class="card" style="border-color:${m.c}20"><div style="font-size:12px;font-weight:700;color:${m.c};margin-bottom:8px">${m.l} 결과</div>
