@@ -99,7 +99,11 @@ function parsePP(rows){return rows.map(r=>({date:fixD(r["날짜"]||r["Date"]||""
   otherSales:pn(r["7일 기타 SKU 판매 "]||0)})).filter(r=>r.advAsin||r.purAsin)}
 
 // ═══ ANALYSIS ═══
-function campByDate(data){const by={};data.forEach(r=>{if(!r.date)return;if(!by[r.date])by[r.date]={date:r.date,cost:0,sales:0,imp:0,clk:0,pur:0};
+function campByDate(data){
+  // First deduplicate: same date + same campaign name = one entry
+  const uniq={};data.forEach(r=>{if(!r.date)return;const k=r.date+"|"+r.name;uniq[k]=r});
+  const deduped=Object.values(uniq);
+  const by={};deduped.forEach(r=>{if(!by[r.date])by[r.date]={date:r.date,cost:0,sales:0,imp:0,clk:0,pur:0};
   by[r.date].cost+=r.cost;by[r.date].sales+=r.sales;by[r.date].imp+=r.imp;by[r.date].clk+=r.clk;by[r.date].pur+=r.purchases});
   return Object.values(by).sort((a,b)=>a.date.localeCompare(b.date))}
 function kwTotals(data){const by={};data.forEach(r=>{const k=r.kw+"|"+r.camp;if(!by[k])by[k]={kw:r.kw,camp:r.camp,mt:r.mt,imp:0,clk:0,spend:0,sales:0,orders:0};
@@ -147,12 +151,16 @@ function renderTab(){dc();document.querySelectorAll(".section").forEach(s=>s.cla
 function kpi(l,v,sub,c){return`<div class="card kpi"><div class="lb">${l}</div><div class="vl" style="color:${c}">${v}</div>${sub?`<div class="sb">${sub}</div>`:""}</div>`}
 function empty(i,t,d){return`<div class="card" style="text-align:center;padding:28px"><div style="font-size:24px;margin-bottom:8px">${i}</div><div style="font-size:12px;font-weight:700;margin-bottom:6px">${t}</div><div style="font-size:10px;color:var(--mt);line-height:1.6">${d}</div></div>`}
 
-// Helper: get latest date and enabled campaigns
+// Helper: get latest date and enabled campaigns (deduplicated by name)
 function getLatest(){
   const dates=[...new Set(S.camp.map(r=>r.date))].sort();
   const d=dates.length?dates[dates.length-1]:"";
-  const enabled=S.camp.filter(r=>r.date===d&&(r.status.includes("ENABLED")||r.status.includes("BUDGET")));
-  return{date:d,camps:enabled,paused:S.camp.filter(r=>r.date===d).length-enabled.length};
+  const rows=S.camp.filter(r=>r.date===d);
+  // Deduplicate by campaign name — same name = same campaign
+  const byName={};rows.forEach(r=>{byName[r.name]=r});
+  const all=Object.values(byName);
+  const enabled=all.filter(r=>r.status.includes("ENABLED")||r.status.includes("BUDGET"));
+  return{date:d,camps:enabled,paused:all.length-enabled.length};
 }
 
 // ══════════════════════════════════════
@@ -310,8 +318,10 @@ function rProduct(el){
       // Also check targeting data for campaigns with this ASIN's keywords
       const campFromTgt=[...new Set(S.tgt.filter(t=>campNames.includes(t.camp)).map(t=>t.camp))];
       const allCampNames=[...new Set([...campNames,...campFromTgt])];
-      // Get all historical campaign data for these campaigns
-      const histCamps=S.camp.filter(c=>allCampNames.includes(c.name));
+      // Get all historical campaign data (deduplicated per date+name)
+      const histRaw=S.camp.filter(c=>allCampNames.includes(c.name));
+      const histUniq={};histRaw.forEach(c=>{histUniq[c.date+"|"+c.name]=c});
+      const histCamps=Object.values(histUniq);
       const totalAdCost=sm(histCamps.map(c=>c.cost));const totalAdSales=sm(histCamps.map(c=>c.sales));
 
       const cc=a.cvr>10?"#10B981":a.cvr>5?"#F59E0B":a.cvr>0?"#EF4444":"#64748B";
@@ -331,7 +341,7 @@ function rProduct(el){
       if(allCampNames.length){
         html+=`<div style="font-size:10px;font-weight:600;margin-bottom:4px;color:var(--ac)">관련 캠페인 (전체 기간, ${allCampNames.length}개)</div>`;
         allCampNames.forEach(cn=>{
-          const cdata=S.camp.filter(c=>c.name===cn);
+          const rawC=S.camp.filter(c=>c.name===cn);const uC={};rawC.forEach(c=>{uC[c.date]=c});const cdata=Object.values(uC);
           const cSales=sm(cdata.map(c=>c.sales));const cCost=sm(cdata.map(c=>c.cost));
           const cAcos=cSales>0?(cCost/cSales*100):0;const dates=[...new Set(cdata.map(c=>c.date))].sort();
           const latestStatus=cdata.length?cdata[cdata.length-1].status:"";
@@ -405,7 +415,8 @@ const AI_PROMPT=`아마존 PPC 전문가. purpose별: launch=ACOS높아도OK, be
 function buildAiCtx(){
   const selNames=new Set(aiState.selCamps);
   const latestDate=[...new Set(S.camp.map(r=>r.date))].sort().pop()||"";
-  const camps=S.camp.filter(c=>c.date===latestDate&&selNames.has(c.name));
+  const byN={};S.camp.filter(c=>c.date===latestDate&&selNames.has(c.name)).forEach(c=>{byN[c.name]=c});
+  const camps=Object.values(byN);
   const kws=kwTotals(S.tgt.filter(t=>selNames.has(t.camp)));
   const stByQ={};S.st.filter(s=>selNames.has(s.camp)).forEach(s=>{if(!stByQ[s.query])stByQ[s.query]={q:s.query,spend:0,sales:0,clk:0};stByQ[s.query].spend+=s.spend;stByQ[s.query].sales+=s.sales;stByQ[s.query].clk+=s.clk});
   return{campaigns:camps.map(c=>({name:c.name,purpose:c.purpose||"미지정",sales:+c.sales.toFixed(0),cost:+c.cost.toFixed(0),acos:(c.acos*100).toFixed(0)+"%",imp:c.imp,clk:c.clk})),
