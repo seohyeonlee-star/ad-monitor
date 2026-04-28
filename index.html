@@ -360,8 +360,21 @@ const AI_PROMPT=`아마존 PPC 전문가. 캠페인 purpose별 기준: launch=AC
 async function runAi(){
   if(aiState.loading)return;
   const apiKey=LS.get("apiKey","");
-  if(!apiKey){alert("⚙️ 설정 탭에서 Anthropic API Key를 입력해주세요.");S.tab="settings";renderTabs();renderTab();return}
+  if(!apiKey){alert("API Key가 없습니다. 📋 프롬프트 복사 버튼을 사용하거나, ⚙️ 설정에서 API Key를 입력하세요.");return}
   aiState.loading=true;rAi(document.getElementById("sec-ai"));
+  const prompt=buildAiPrompt();
+  try{const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+    headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,
+      messages:[{role:"user",content:prompt}]})});
+    const d=await r.json();
+    if(d.error)aiState.result="API 오류: "+(d.error.message||JSON.stringify(d.error));
+    else aiState.result=d.content?.map(c=>c.text||"").join("")||"실패";
+  }catch(e){aiState.result="오류: "+e.message}
+  aiState.loading=false;LS.set("aiR",aiState.result);LS.set("aiM",aiState.mode);rAi(document.getElementById("sec-ai"));
+}
+
+function buildAiPrompt(){
   const camps=S.camp.filter(c=>c.date===[...new Set(S.camp.map(r=>r.date))].sort().pop());
   const kws=kwTotals(S.tgt);const pairs=crossSellAnalysis(S.pp);
   const ctx={campaigns:camps.slice(0,15).map(c=>({name:c.name,purpose:c.purpose||"미지정",sales:+c.sales.toFixed(0),cost:+c.cost.toFixed(0),acos:(c.acos*100).toFixed(0)+"%",imp:c.imp,clk:c.clk})),
@@ -369,16 +382,24 @@ async function runAi(){
     waste:kws.filter(k=>k.clk>=3&&k.sales===0).slice(0,8).map(k=>({kw:k.kw,clk:k.clk,spend:+k.spend.toFixed(1)})),
     crossSell:pairs.slice(0,8).map(p=>({adv:p.advAsin,pur:p.purAsin,orders:p.orders})),
     cvr:S.br.length?av(S.br.filter(r=>r.cvr>0).map(r=>r.cvr)).toFixed(1)+"%":"N/A"};
-  try{const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
-    headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,
-      messages:[{role:"user",content:AI_MODES[aiState.mode].l+" 관점.\n"+AI_PROMPT+"\n\n데이터:\n"+JSON.stringify(ctx,null,1)}]})});
-    const d=await r.json();
-    if(d.error)aiState.result="API 오류: "+(d.error.message||JSON.stringify(d.error));
-    else aiState.result=d.content?.map(c=>c.text||"").join("")||"실패";
-  }catch(e){aiState.result="오류: "+e.message}
-  aiState.loading=false;LS.set("aiR",aiState.result);LS.set("aiM",aiState.mode);rAi(document.getElementById("sec-ai"));
+  return AI_MODES[aiState.mode].l+" 관점.\n"+AI_PROMPT+"\n\n데이터:\n"+JSON.stringify(ctx,null,1);
 }
+
+function copyPrompt(){
+  if(!S.camp.length){alert("데이터가 없습니다. 먼저 동기화하세요.");return}
+  const prompt=buildAiPrompt();
+  navigator.clipboard.writeText(prompt).then(()=>{
+    const btn=document.getElementById("copyBtn");
+    if(btn){btn.textContent="✅ 복사됨! Claude.ai에 붙여넣기";btn.style.background="rgba(16,185,129,0.2)";btn.style.color="#10B981";
+      setTimeout(()=>{btn.textContent="📋 프롬프트 복사 (Claude.ai용)";btn.style.background="rgba(255,255,255,0.06)";btn.style.color="var(--tx)"},3000)}
+  }).catch(()=>{
+    // Fallback: show prompt in a textarea
+    const el=document.getElementById("sec-ai");
+    if(el){const ta=document.createElement("textarea");ta.value=prompt;ta.style.cssText="width:100%;height:200px;background:#1E293B;color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:10px;font-size:10px;font-family:monospace;margin-top:8px";
+      el.appendChild(ta);ta.select()}
+  });
+}
+
 function rAi(el){if(!el)return;
   const hasKey=!!LS.get("apiKey","");
   let html=`<div class="card"><div style="font-size:13px;font-weight:700;margin-bottom:8px">전략 유형</div>
@@ -386,11 +407,23 @@ function rAi(el){if(!el)return;
   Object.entries(AI_MODES).forEach(([k,m])=>{const sel=aiState.mode===k;
     html+=`<button onclick="aiState.mode='${k}';rAi(document.getElementById('sec-ai'))" style="padding:5px 10px;border-radius:6px;border:2px solid ${sel?m.c:"var(--bd)"};background:${sel?m.c+"15":"transparent"};color:${sel?m.c:"var(--mt)"};font-size:10px;font-weight:600">${m.l}</button>`});
   html+=`</div></div>`;
-  if(!hasKey)html+=`<div class="alert warn">⚠ AI 분석을 사용하려면 ⚙️ 설정에서 <b>Anthropic API Key</b>를 입력하세요</div>`;
+
   const m=AI_MODES[aiState.mode];
-  html+=`<div class="card"><button onclick="runAi()" ${!S.camp.length||aiState.loading||!hasKey?"disabled":""} style="width:100%;padding:12px;border-radius:10px;border:none;
-    background:linear-gradient(135deg,${m.c},${m.c}99);color:#fff;font-size:13px;font-weight:700;opacity:${S.camp.length&&hasKey?1:.5}">
-    ${aiState.loading?'<span class="spinner"></span>분석 중...':'🤖 '+m.l+' 분석'}</button></div>`;
+
+  // Two buttons: API + Copy
+  html+=`<div class="card">`;
+  if(hasKey){
+    html+=`<button onclick="runAi()" ${!S.camp.length||aiState.loading?"disabled":""} style="width:100%;padding:12px;border-radius:10px;border:none;
+      background:linear-gradient(135deg,${m.c},${m.c}99);color:#fff;font-size:13px;font-weight:700;opacity:${S.camp.length?1:.5};margin-bottom:8px">
+      ${aiState.loading?'<span class="spinner"></span>분석 중...':'🤖 '+m.l+' AI 분석 실행'}</button>`;
+  }
+  html+=`<button id="copyBtn" onclick="copyPrompt()" ${!S.camp.length?"disabled":""} style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--bd);
+    background:rgba(255,255,255,0.06);color:var(--tx);font-size:13px;font-weight:700;opacity:${S.camp.length?1:.5}">
+    📋 프롬프트 복사 (Claude.ai용)</button>`;
+  if(!hasKey)html+=`<div style="margin-top:8px;font-size:9px;color:var(--mt);line-height:1.6">💡 <b>API Key 없이도 사용 가능:</b> 프롬프트 복사 → <a href="https://claude.ai" target="_blank" style="color:#3B82F6">claude.ai</a>에 붙여넣기<br>
+    🔑 <b>자동 분석:</b> ⚙️ 설정에서 API Key 입력 시 버튼 하나로 즉시 분석 (<a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:#3B82F6">발급받기</a>, 신규 $5 무료)</div>`;
+  html+=`</div>`;
+
   if(aiState.result)html+=`<div class="card" style="border-color:${m.c}20"><div style="font-size:12px;font-weight:700;color:${m.c};margin-bottom:8px">${m.l} 결과</div>
     <div style="font-size:11px;color:#CBD5E1;line-height:1.8;white-space:pre-wrap">${aiState.result}</div></div>`;
   el.innerHTML=html;
