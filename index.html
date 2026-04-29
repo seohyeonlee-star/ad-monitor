@@ -189,8 +189,25 @@ function rFunnel(el){
   if(wasteKW.length>10)html+=`<div class="alert bad">🚨 검색어 ${wasteKW.length}개가 $${sm(wasteKW.map(s=>s.spend)).toFixed(0)} 낭비</div>`;
   if(cross.length>5)html+=`<div class="alert good">💡 크로스셀 ${cross.length}건 발견</div>`;
 
-  // 5-stage funnel
-  html+=`<div style="font-size:12px;font-weight:700;margin:12px 0 8px">5단계 퍼널 (${latestDate} 활성 캠페인)</div>`;
+  // Period filter
+  if(!window._fPeriod)window._fPeriod="7";
+  html+=`<div style="display:flex;gap:3px;margin:12px 0 8px;background:rgba(255,255,255,0.04);border-radius:6px;padding:2px;width:fit-content">
+    ${[{id:"all",l:"전체"},{id:"7",l:"7일"},{id:"30",l:"30일"}].map(p=>`<button onclick="window._fPeriod='${p.id}';renderTab()" style="padding:3px 9px;border-radius:5px;border:none;font-size:9px;font-weight:600;cursor:pointer;
+      background:${window._fPeriod===p.id?"rgba(59,130,246,0.2)":"transparent"};color:${window._fPeriod===p.id?"#3B82F6":"#64748B"}">${p.l}</button>`).join("")}</div>`;
+
+  // Filter daily by period
+  let fDaily=daily;
+  if(window._fPeriod!=="all"&&daily.length>0){const n=parseInt(window._fPeriod);fDaily=daily.slice(-n)}
+  const fRange=fDaily.length?fDaily[0].date+" ~ "+fDaily[fDaily.length-1].date:"—";
+  const pCost=sm(fDaily.map(d=>d.cost)),pSales=sm(fDaily.map(d=>d.sales)),pImp=sm(fDaily.map(d=>d.imp)),pClk=sm(fDaily.map(d=>d.clk)),pPur=sm(fDaily.map(d=>d.pur));
+  const pCtr=pImp>0?(pClk/pImp*100):0;const pRoas=pCost>0?(pSales/pCost):0;
+
+  html+=`<div style="font-size:9px;color:var(--mt);margin-bottom:6px">${fRange} (${fDaily.length}일)</div>`;
+  html+=`<div class="g2">${kpi("매출","$"+pSales.toFixed(0),"광고비 $"+pCost.toFixed(0),"#10B981")}${kpi("구매",pPur+"건","","#3B82F6")}
+    ${kpi("CTR",pCtr.toFixed(2)+"%",pClk.toLocaleString()+"클릭","#8B5CF6")}${kpi("ROAS",pRoas.toFixed(2)+"x","",pRoas<3?"#F59E0B":"#10B981")}</div>`;
+
+  // 5-stage funnel (latest date enabled)
+  html+=`<div style="font-size:12px;font-weight:700;margin:8px 0 6px">5단계 퍼널 (${latestDate})</div>`;
   [{n:1,i:"👁",t:"노출",v:tImp?tImp.toLocaleString():"—",d:budgetC>0?budgetC+"개 예산소진":"정상",s:budgetC>0?"warn":"ok",c:"#3B82F6",tab:"ads"},
    {n:2,i:"👆",t:"CTR",v:ctr?ctr.toFixed(2)+"%":"—",d:ctr>0&&ctr<0.3?"낮음":"양호",s:ctr>0&&ctr<0.3?"warn":"ok",c:"#8B5CF6",tab:"ads"},
    {n:3,i:"📄",t:"CVR",v:avgCVR?avgCVR.toFixed(1)+"%":"—",d:avgCVR>0&&avgCVR<5?"리스팅 점검":"양호",s:avgCVR>0&&avgCVR<5?"warn":"ok",c:"#F59E0B",tab:"product"},
@@ -214,8 +231,8 @@ function rFunnel(el){
       <div style="text-align:center;padding:6px;border:1px solid var(--bd);border-radius:8px"><div style="font-size:8px;color:var(--mt)">광고 CVR</div><div style="font-size:13px;font-weight:800;color:#10B981">${tClk>0?(tPur/tClk*100).toFixed(1):0}%</div></div>
       <div style="text-align:center;padding:6px;border:1px solid var(--bd);border-radius:8px"><div style="font-size:8px;color:var(--mt)">광고 매출비중</div><div style="font-size:13px;font-weight:800;color:#F59E0B">${brT.sales>0?(tSales/brT.sales*100).toFixed(0):0}%</div></div></div></div>`}
 
-  // Trend
-  if(daily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">일별 추이</div><canvas id="chFT" style="height:150px;width:100%"></canvas></div>`}
+  // Trend chart (filtered period)
+  if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._fPeriod==="all"?"전체":"최근 "+window._fPeriod+"일"} 추이</div><canvas id="chFT" style="height:160px;width:100%"></canvas></div>`}
 
   // Enabled campaigns list
   if(enabled.length){
@@ -231,13 +248,14 @@ function rFunnel(el){
             <div style="font-size:9px;color:${ac}">ACOS ${(c.acos*100).toFixed(0)}%</div></div></div></div>`});
   }
   el.innerHTML=html;
-  if(daily.length>1)setTimeout(()=>{const c=document.getElementById("chFT");if(!c)return;
-    charts.ft=new Chart(c,{type:"bar",data:{labels:daily.map(d=>d.date.slice(5)),datasets:[
-      {label:"매출($)",data:daily.map(d=>d.sales),backgroundColor:"rgba(16,185,129,0.5)",borderRadius:3,yAxisID:'y'},
-      {label:"ROAS",data:daily.map(d=>d.cost>0?(d.sales/d.cost):0),type:"line",borderColor:"#F59E0B",fill:false,tension:.3,borderWidth:2,pointRadius:3,yAxisID:'y1'}]},
+  if(fDaily.length>1)setTimeout(()=>{const c=document.getElementById("chFT");if(!c)return;
+    charts.ft=new Chart(c,{type:"bar",data:{labels:fDaily.map(d=>d.date.slice(5)),datasets:[
+      {label:"매출($)",data:fDaily.map(d=>d.sales),backgroundColor:"rgba(16,185,129,0.5)",borderRadius:3,yAxisID:'y'},
+      {label:"구매(건)",data:fDaily.map(d=>d.pur),backgroundColor:"rgba(59,130,246,0.4)",borderRadius:3,yAxisID:'y2'},
+      {label:"ROAS",data:fDaily.map(d=>d.cost>0?(d.sales/d.cost):0),type:"line",borderColor:"#F59E0B",fill:false,tension:.3,borderWidth:2,pointRadius:3,yAxisID:'y1'}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:"#94A3B8",font:{size:9}}}},
       scales:{x:{ticks:{font:{size:7},color:"#64748B",maxRotation:45},grid:{display:false}},y:{position:'left',ticks:{font:{size:8},color:"#10B981",callback:v=>'$'+v},grid:{color:"rgba(255,255,255,0.03)"}},
-        y1:{position:'right',ticks:{font:{size:8},color:"#F59E0B"},grid:{display:false}}}}})},50);
+        y1:{position:'right',ticks:{font:{size:8},color:"#F59E0B"},grid:{display:false}},y2:{display:false}}}})},50);
 }
 
 // ══════════════════════════════════════
@@ -247,13 +265,26 @@ let expCamp=null;
 function rAds(el){
   if(!S.camp.length){el.innerHTML=empty("📈","광고 데이터 대기 중","campaign 탭 동기화 필요");return}
   const {date:latestDate,camps:enabled}=getLatest();
-  const tCost=sm(enabled.map(r=>r.cost)),tSales=sm(enabled.map(r=>r.sales)),tImp=sm(enabled.map(r=>r.imp)),tClk=sm(enabled.map(r=>r.clk)),tPur=sm(enabled.map(r=>r.purchases));
-  const ctr=tImp>0?(tClk/tImp*100):0;const roas=tCost>0?(tSales/tCost):0;
-  let html=`<div style="font-size:9px;color:var(--mt);margin-bottom:6px">${latestDate} · ${enabled.length}개 활성</div>`;
-  html+=`<div class="g2">${kpi("매출","$"+tSales.toFixed(0),"광고비 $"+tCost.toFixed(0),"#10B981")}${kpi("구매",tPur+"건","","#3B82F6")}
-    ${kpi("CTR",ctr.toFixed(2)+"%",tClk.toLocaleString()+"클릭","#8B5CF6")}${kpi("ROAS",roas.toFixed(2)+"x","",roas<3?"#F59E0B":"#10B981")}</div>`;
   const daily=campByDate(S.camp);
-  if(daily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">매출 & ACOS 추이</div><canvas id="chAds" style="height:150px;width:100%"></canvas></div>`}
+
+  // Period filter (shared with funnel via _fPeriod)
+  if(!window._aPeriod)window._aPeriod="7";
+  let fDaily=daily;
+  if(window._aPeriod!=="all"&&daily.length>0){const n=parseInt(window._aPeriod);fDaily=daily.slice(-n)}
+  const fRange=fDaily.length?fDaily[0].date+" ~ "+fDaily[fDaily.length-1].date:"—";
+  const pCost=sm(fDaily.map(d=>d.cost)),pSales=sm(fDaily.map(d=>d.sales)),pImp=sm(fDaily.map(d=>d.imp)),pClk=sm(fDaily.map(d=>d.clk)),pPur=sm(fDaily.map(d=>d.pur));
+  const pCtr=pImp>0?(pClk/pImp*100):0;const pRoas=pCost>0?(pSales/pCost):0;
+
+  let html=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <div style="font-size:9px;color:var(--mt)">${latestDate} · ${enabled.length}개 활성</div>
+    <div style="display:flex;gap:3px;background:rgba(255,255,255,0.04);border-radius:6px;padding:2px">
+    ${[{id:"all",l:"전체"},{id:"7",l:"7일"},{id:"30",l:"30일"}].map(p=>`<button onclick="window._aPeriod='${p.id}';renderTab()" style="padding:3px 8px;border-radius:5px;border:none;font-size:9px;font-weight:600;cursor:pointer;
+      background:${window._aPeriod===p.id?"rgba(59,130,246,0.2)":"transparent"};color:${window._aPeriod===p.id?"#3B82F6":"#64748B"}">${p.l}</button>`).join("")}</div></div>`;
+  html+=`<div style="font-size:9px;color:var(--mt);margin-bottom:6px">${fRange} (${fDaily.length}일)</div>`;
+  html+=`<div class="g2">${kpi("매출","$"+pSales.toFixed(0),"광고비 $"+pCost.toFixed(0),"#10B981")}${kpi("구매",pPur+"건","","#3B82F6")}
+    ${kpi("CTR",pCtr.toFixed(2)+"%",pClk.toLocaleString()+"클릭","#8B5CF6")}${kpi("ROAS",pRoas.toFixed(2)+"x","",pRoas<3?"#F59E0B":"#10B981")}</div>`;
+
+  if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._aPeriod==="all"?"전체":"최근 "+window._aPeriod+"일"} 매출 & ACOS</div><canvas id="chAds" style="height:150px;width:100%"></canvas></div>`}
   enabled.sort((a,b)=>b.sales-a.sales).forEach(c=>{
     const isExp=expCamp===c.name;const ac=c.acos>1?"#EF4444":c.acos>0.3?"#F59E0B":c.acos>0?"#10B981":"#64748B";
     const p=c.purpose&&PURPOSE_L[c.purpose.toLowerCase()]?PURPOSE_L[c.purpose.toLowerCase()]:null;
@@ -283,12 +314,12 @@ function rAds(el){
     html+=`</div>`;
   });
   el.innerHTML=html;
-  if(daily.length>1)setTimeout(()=>{const c=document.getElementById("chAds");if(!c)return;
-    charts.ads=new Chart(c,{type:"bar",data:{labels:daily.map(d=>d.date.slice(5)),datasets:[
-      {label:"매출",data:daily.map(d=>d.sales),backgroundColor:"rgba(16,185,129,0.5)",borderRadius:3,yAxisID:'y'},
-      {label:"광고비",data:daily.map(d=>d.cost),backgroundColor:"rgba(245,158,11,0.5)",borderRadius:3,yAxisID:'y'},
-      {label:"ACOS%",data:daily.map(d=>d.sales>0?(d.cost/d.sales*100):0),type:"line",borderColor:"#EF4444",fill:false,tension:.3,borderWidth:2,pointRadius:3,yAxisID:'y1'},
-      {label:"목표30%",data:daily.map(()=>30),type:"line",borderColor:"rgba(255,255,255,0.15)",borderDash:[4,4],borderWidth:1,pointRadius:0,yAxisID:'y1'}]},
+  if(fDaily.length>1)setTimeout(()=>{const c=document.getElementById("chAds");if(!c)return;
+    charts.ads=new Chart(c,{type:"bar",data:{labels:fDaily.map(d=>d.date.slice(5)),datasets:[
+      {label:"매출",data:fDaily.map(d=>d.sales),backgroundColor:"rgba(16,185,129,0.5)",borderRadius:3,yAxisID:'y'},
+      {label:"광고비",data:fDaily.map(d=>d.cost),backgroundColor:"rgba(245,158,11,0.5)",borderRadius:3,yAxisID:'y'},
+      {label:"ACOS%",data:fDaily.map(d=>d.sales>0?(d.cost/d.sales*100):0),type:"line",borderColor:"#EF4444",fill:false,tension:.3,borderWidth:2,pointRadius:3,yAxisID:'y1'},
+      {label:"목표30%",data:fDaily.map(()=>30),type:"line",borderColor:"rgba(255,255,255,0.15)",borderDash:[4,4],borderWidth:1,pointRadius:0,yAxisID:'y1'}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:"#94A3B8",font:{size:9}}}},
       scales:{x:{ticks:{font:{size:7},color:"#64748B",maxRotation:45},grid:{display:false}},y:{position:'left',ticks:{font:{size:8},color:"#10B981",callback:v=>'$'+v},grid:{color:"rgba(255,255,255,0.03)"}},
         y1:{position:'right',ticks:{font:{size:8},color:"#EF4444"},grid:{display:false}}}}})},50);
