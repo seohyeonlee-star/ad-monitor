@@ -76,35 +76,57 @@ const sm=a=>a.reduce((x,y)=>x+y,0);const av=a=>a.length?sm(a)/a.length:0;
 function fixD(d){const m=String(d).match(/Date\((\d+),(\d+),(\d+)\)/);return m?`${m[1]}-${String(+m[2]+1).padStart(2,'0')}-${m[3].padStart(2,'0')}`:String(d).slice(0,10)}
 function pnPct(s){let v=pn(s);if(v>0&&v<=1)v=v*100;return v}
 
-// ═══ PARSERS ═══
-function parseCamp(rows){return rows.map(r=>({date:fixD(r["Date"]||""),purpose:r["Purpose"]||"",name:r["Campaign name"]||r["Campaign Name"]||"",
-  status:r["Status"]||"",type:r["Type"]||"",budget:r["Campaign budget amount"]||r["Campaign budget amount (converted)"]||"",
-  acos:pn(r["ACOS"]),roas:pn(r["ROAS"]),purchases:pn(r["Purchases"]),sales:pn(r["Sales"]||r["Sales (converted)"]),
-  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),ctr:pn(r["CTR"]),cost:pn(r["Total cost"]||r["Total cost (converted)"]),
-  tos:r["Top-of-search impression share"]||""})).filter(r=>r.name)}
-function parseTgt(rows){return rows.map(r=>({date:fixD(r["Date"]||""),camp:r["Campaign Name"]||"",kw:r["Targeting"]||"",mt:r["Match Type"]||"",
-  imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),spend:pn(r["Spend"]),acos:pn(r["Total Advertising Cost of Sales (ACOS) "]),
-  sales:pn(r["7 Day Total Sales "]),orders:pn(r["7 Day Total Orders (#)"]),
-  advSales:pn(r["7 Day Advertised SKU Sales "]),otherSales:pn(r["7 Day Other SKU Sales "])})).filter(r=>r.kw)}
-function parseST(rows){return rows.map(r=>({date:fixD(r["Date"]||""),camp:r["Campaign Name"]||"",kw:r["Targeting"]||"",mt:r["Match Type"]||"",
-  query:r["Customer Search Term"]||"",imp:pn(r["Impressions"]),clk:pn(r["Clicks"]),spend:pn(r["Spend"]),
-  sales:pn(r["7 Day Total Sales "]),orders:pn(r["7 Day Total Orders (#)"])})).filter(r=>r.query)}
-function parseBR(rows){return rows.map(r=>({date:fixD(r["Date"]||""),asin:r["(Child) ASIN"]||"",title:r["Title"]||"",
-  sessions:pn(r["Sessions - Total"]),pv:pn(r["Page Views - Total"]),units:pn(r["Units Ordered"]),
-  cvr:pnPct(r["Unit Session Percentage"]),sales:pn(r["Ordered Product Sales"])})).filter(r=>r.asin)}
-function parsePP(rows){return rows.map(r=>({date:fixD(r["날짜"]||r["Date"]||""),camp:r["캠페인 이름"]||r["Campaign Name"]||"",
-  advAsin:r["광고된 ASIN"]||r["Advertised ASIN"]||"",kw:r["키워드"]||r["Keyword"]||"",
-  purAsin:r["구매한 ASIN"]||r["Purchased ASIN"]||"",
-  otherQty:pn(r["7일 기타 SKU 수량(개수)"]||0),otherOrders:pn(r["7일 기타 SKU 주문(건수)"]||0),
-  otherSales:pn(r["7일 기타 SKU 판매 "]||0)})).filter(r=>r.advAsin||r.purAsin)}
+// ═══ PARSERS (trim all keys to handle trailing spaces) ═══
+function getV(r,keys){for(const k of keys){const v=r[k]||r[k.trim()]||r[k+" "];if(v!==undefined&&v!=="")return String(v)}return""}
+function getN(r,keys){return pn(getV(r,keys))}
+function parseCamp(rows){return rows.map(r=>{
+  // Try all possible column name variations
+  const name=getV(r,["Campaign name","Campaign Name","campaign name","캠페인 이름"]);
+  if(!name)return null;
+  return{date:fixD(getV(r,["Date","date","날짜"])),purpose:getV(r,["Purpose","purpose","목적"]),name:name,
+    status:getV(r,["Status","status","State","state"]),type:getV(r,["Type","type"]),
+    budget:getV(r,["Campaign budget amount","Campaign budget amount (converted)"]),
+    acos:getN(r,["ACOS","acos"]),roas:getN(r,["ROAS","roas"]),
+    purchases:getN(r,["Purchases","purchases","주문"]),
+    sales:getN(r,["Sales","Sales (converted)","sales","매출"]),
+    imp:getN(r,["Impressions","impressions","노출"]),
+    clk:getN(r,["Clicks","clicks","클릭"]),
+    cost:getN(r,["Total cost","Total cost (converted)","total cost","비용"]),
+    tos:getV(r,["Top-of-search impression share"])}}).filter(Boolean)}
+function parseTgt(rows){return rows.map(r=>({date:fixD(getV(r,["Date","date"])),camp:getV(r,["Campaign Name","Campaign name"]),
+  kw:getV(r,["Targeting","targeting","키워드"]),mt:getV(r,["Match Type","match type"]),
+  imp:getN(r,["Impressions"]),clk:getN(r,["Clicks"]),spend:getN(r,["Spend","spend"]),
+  acos:getN(r,["Total Advertising Cost of Sales (ACOS) ","Total Advertising Cost of Sales (ACOS)","ACOS"]),
+  sales:getN(r,["7 Day Total Sales ","7 Day Total Sales","Sales"]),orders:getN(r,["7 Day Total Orders (#)","7 Day Total Orders","Orders"]),
+  advSales:getN(r,["7 Day Advertised SKU Sales ","7 Day Advertised SKU Sales"]),
+  otherSales:getN(r,["7 Day Other SKU Sales ","7 Day Other SKU Sales"])})).filter(r=>r.kw)}
+function parseST(rows){return rows.map(r=>({date:fixD(getV(r,["Date","date"])),camp:getV(r,["Campaign Name","Campaign name"]),
+  kw:getV(r,["Targeting","targeting"]),mt:getV(r,["Match Type"]),
+  query:getV(r,["Customer Search Term","customer search term"]),
+  imp:getN(r,["Impressions"]),clk:getN(r,["Clicks"]),spend:getN(r,["Spend"]),
+  sales:getN(r,["7 Day Total Sales ","7 Day Total Sales","Sales"]),
+  orders:getN(r,["7 Day Total Orders (#)","7 Day Total Orders","Orders"])})).filter(r=>r.query)}
+function parseBR(rows){return rows.map(r=>({date:fixD(getV(r,["Date","date","날짜"])),
+  asin:getV(r,["(Child) ASIN","ASIN","asin"]),title:getV(r,["Title","title"]),
+  sessions:getN(r,["Sessions - Total","Sessions","sessions"]),pv:getN(r,["Page Views - Total","Page Views"]),
+  units:getN(r,["Units Ordered","units ordered"]),
+  cvr:pnPct(getV(r,["Unit Session Percentage","Unit Session Percentage - Total"])),
+  sales:getN(r,["Ordered Product Sales","ordered product sales"])})).filter(r=>r.asin)}
+function parsePP(rows){return rows.map(r=>({date:fixD(getV(r,["날짜","Date"])),camp:getV(r,["캠페인 이름","Campaign Name"]),
+  advAsin:getV(r,["광고된 ASIN","Advertised ASIN"]),kw:getV(r,["키워드","Keyword"]),
+  purAsin:getV(r,["구매한 ASIN","Purchased ASIN"]),
+  otherQty:getN(r,["7일 기타 SKU 수량(개수)","7 Day Other SKU Units (#)"]),
+  otherOrders:getN(r,["7일 기타 SKU 주문(건수)","7 Day Other SKU Orders (#)"]),
+  otherSales:getN(r,["7일 기타 SKU 판매 ","7일 기타 SKU 판매","7 Day Other SKU Sales"])})).filter(r=>r.advAsin||r.purAsin)}
 
 // ═══ ANALYSIS ═══
 function campByDate(data){
-  // First deduplicate: same date + same campaign name = one entry
-  const uniq={};data.forEach(r=>{if(!r.date)return;const k=r.date+"|"+r.name;uniq[k]=r});
+  // Deduplicate: same date + same campaign name = one entry (last wins)
+  // Allow empty dates — group under "" key
+  const uniq={};data.forEach(r=>{const k=(r.date||"none")+"|"+r.name;uniq[k]=r});
   const deduped=Object.values(uniq);
-  const by={};deduped.forEach(r=>{if(!by[r.date])by[r.date]={date:r.date,cost:0,sales:0,imp:0,clk:0,pur:0};
-  by[r.date].cost+=r.cost;by[r.date].sales+=r.sales;by[r.date].imp+=r.imp;by[r.date].clk+=r.clk;by[r.date].pur+=r.purchases});
+  const by={};deduped.forEach(r=>{const d=r.date||"none";if(!by[d])by[d]={date:d,cost:0,sales:0,imp:0,clk:0,pur:0};
+  by[d].cost+=r.cost;by[d].sales+=r.sales;by[d].imp+=r.imp;by[d].clk+=r.clk;by[d].pur+=r.purchases});
   return Object.values(by).sort((a,b)=>a.date.localeCompare(b.date))}
 function kwTotals(data){const by={};data.forEach(r=>{const k=r.kw+"|"+r.camp;if(!by[k])by[k]={kw:r.kw,camp:r.camp,mt:r.mt,imp:0,clk:0,spend:0,sales:0,orders:0};
   by[k].imp+=r.imp;by[k].clk+=r.clk;by[k].spend+=r.spend;by[k].sales+=r.sales;by[k].orders+=r.orders});
@@ -153,14 +175,18 @@ function empty(i,t,d){return`<div class="card" style="text-align:center;padding:
 
 // Helper: get latest date and enabled campaigns (deduplicated by name)
 function getLatest(){
-  const dates=[...new Set(S.camp.map(r=>r.date))].sort();
-  const d=dates.length?dates[dates.length-1]:"";
-  const rows=S.camp.filter(r=>r.date===d);
-  // Deduplicate by campaign name — same name = same campaign
+  const dates=[...new Set(S.camp.map(r=>r.date).filter(d=>d&&d!=="none"))].sort();
+  const d=dates.length?dates[dates.length-1]:(S.camp.length?S.camp[0].date:"");
+  const rows=S.camp.filter(r=>r.date===d||(!d));
+  // Deduplicate by campaign name
   const byName={};rows.forEach(r=>{byName[r.name]=r});
   const all=Object.values(byName);
-  const enabled=all.filter(r=>r.status.includes("ENABLED")||r.status.includes("BUDGET"));
-  return{date:d,camps:enabled,paused:all.length-enabled.length};
+  // Flexible status check: ENABLED, BUDGET, or if no status field just include all
+  const enabled=all.filter(r=>{
+    const st=(r.status||"").toUpperCase();
+    return !st||st.includes("ENABLED")||st.includes("BUDGET")||st.includes("DELIVERING");
+  });
+  return{date:d,camps:enabled.length?enabled:all,paused:all.length-(enabled.length||all.length)};
 }
 
 // ══════════════════════════════════════
@@ -539,8 +565,28 @@ function rSettings(el){
     ${apiKey?`<span style="margin-left:8px;font-size:9px;color:#10B981">✓ 저장됨</span>`:""}</div>`;
   html+=`<div class="card"><div style="font-size:11px;font-weight:700;color:#F59E0B;margin-bottom:6px">🎯 Purpose 값</div>
     <div style="font-size:10px;color:var(--mt)">campaign B열: launch / bestseller / clearance / conquest / seasonal / defense</div></div>`;
+
+  // Diagnostic
+  const {date:ld,camps:en}=getLatest();const daily=campByDate(S.camp);
+  const sampleCamp=S.camp.length?S.camp[0]:null;
+  html+=`<div class="card" style="border-color:rgba(6,182,212,0.15)"><div style="font-size:11px;font-weight:700;color:#06B6D4;margin-bottom:6px">🔍 데이터 진단</div>
+    <div style="font-size:9px;color:var(--mt);line-height:1.8;font-family:monospace">
+    campaign 원본행: ${S.camp.length}<br>
+    날짜 수: ${[...new Set(S.camp.map(r=>r.date))].length} (${[...new Set(S.camp.map(r=>r.date))].sort().join(", ").slice(0,80)}...)<br>
+    최신 날짜: "${ld}"<br>
+    활성 캠페인: ${en.length}개<br>
+    campByDate 결과: ${daily.length}일<br>
+    합산 매출: $${sm(daily.map(d=>d.sales)).toFixed(0)}<br>
+    ${sampleCamp?`<br>첫 행 샘플:<br>
+    &nbsp;date="${sampleCamp.date}" name="${sampleCamp.name?.slice(0,30)}"<br>
+    &nbsp;status="${sampleCamp.status}" sales=${sampleCamp.sales} imp=${sampleCamp.imp}<br>
+    &nbsp;cost=${sampleCamp.cost} purchases=${sampleCamp.purchases}`:""}<br><br>
+    business_report: ${S.br.length}행, targeting: ${S.tgt.length}행<br>
+    search_terms: ${S.st.length}행, purchased: ${S.pp.length}행
+    </div></div>`;
+
   el.innerHTML=html;
-  const btn=document.createElement("button");btn.textContent="🔌 연결 해제";
+  const btn=document.createElement("button");btn.textContent="🔌 연결 해제 & 캐시 초기화";
   btn.style.cssText="padding:10px;width:100%;border-radius:8px;border:1px solid rgba(239,68,68,0.2);background:transparent;color:#EF4444;font-size:11px;font-weight:600;cursor:pointer;margin-top:8px";
   btn.onclick=()=>{LS.clear();location.reload()};el.appendChild(btn);
 }
