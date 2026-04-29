@@ -287,11 +287,11 @@ function rFunnel(el){
   if(fDaily.length>1)setTimeout(()=>{const c=document.getElementById("chFT");if(!c)return;
     charts.ft=new Chart(c,{type:"bar",data:{labels:fDaily.map(d=>d.date.slice(5)),datasets:[
       {label:"매출($)",data:fDaily.map(d=>d.sales),backgroundColor:"rgba(16,185,129,0.5)",borderRadius:3,yAxisID:'y'},
-      {label:"구매(건)",data:fDaily.map(d=>d.pur),backgroundColor:"rgba(59,130,246,0.4)",borderRadius:3,yAxisID:'y2'},
       {label:"ROAS",data:fDaily.map(d=>d.cost>0?(d.sales/d.cost):0),type:"line",borderColor:"#F59E0B",fill:false,tension:.3,borderWidth:2,pointRadius:3,yAxisID:'y1'}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:"#94A3B8",font:{size:9}}}},
-      scales:{x:{ticks:{font:{size:7},color:"#64748B",maxRotation:45},grid:{display:false}},y:{position:'left',ticks:{font:{size:8},color:"#10B981",callback:v=>'$'+v},grid:{color:"rgba(255,255,255,0.03)"}},
-        y1:{position:'right',ticks:{font:{size:8},color:"#F59E0B"},grid:{display:false}},y2:{display:false}}}})},50);
+      scales:{x:{ticks:{font:{size:7},color:"#64748B",maxRotation:45},grid:{display:false}},
+        y:{position:'left',ticks:{font:{size:8},color:"#10B981",callback:v=>'$'+v},grid:{color:"rgba(255,255,255,0.03)"}},
+        y1:{position:'right',min:0,ticks:{font:{size:8},color:"#F59E0B"},grid:{display:false}}}}})},50);
 }
 
 // ══════════════════════════════════════
@@ -357,8 +357,9 @@ function rAds(el){
       {label:"ACOS%",data:fDaily.map(d=>d.sales>0?(d.cost/d.sales*100):0),type:"line",borderColor:"#EF4444",fill:false,tension:.3,borderWidth:2,pointRadius:3,yAxisID:'y1'},
       {label:"목표30%",data:fDaily.map(()=>30),type:"line",borderColor:"rgba(255,255,255,0.15)",borderDash:[4,4],borderWidth:1,pointRadius:0,yAxisID:'y1'}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:"#94A3B8",font:{size:9}}}},
-      scales:{x:{ticks:{font:{size:7},color:"#64748B",maxRotation:45},grid:{display:false}},y:{position:'left',ticks:{font:{size:8},color:"#10B981",callback:v=>'$'+v},grid:{color:"rgba(255,255,255,0.03)"}},
-        y1:{position:'right',ticks:{font:{size:8},color:"#EF4444"},grid:{display:false}}}}})},50);
+      scales:{x:{ticks:{font:{size:7},color:"#64748B",maxRotation:45},grid:{display:false}},
+        y:{position:'left',min:0,ticks:{font:{size:8},color:"#10B981",callback:v=>'$'+v},grid:{color:"rgba(255,255,255,0.03)"}},
+        y1:{position:'right',min:0,ticks:{font:{size:8},color:"#EF4444"},grid:{display:false}}}}})},50);
 }
 
 // ══════════════════════════════════════
