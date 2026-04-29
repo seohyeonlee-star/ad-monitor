@@ -69,7 +69,7 @@ function gviz(t){if(!t||!t.cols||!t.rows)return[];const h=t.cols.map(c=>(c.label
 return t.rows.map(row=>{const o={};(row.c||[]).forEach((c,i)=>{if(i<h.length)o[h[i]]=c?(c.v!=null?String(c.v):''):''});return o}).filter(o=>Object.values(o).some(v=>v!==''))}
 
 // ═══ STATE ═══
-let S={sheetId:"",camp:[],tgt:[],st:[],br:[],pp:[],sync:{campaign:false,targeting:false,search_terms:false,business_report:false,purchased_product:false},lastSync:"",tab:"funnel"};
+let S={sheetId:"",camp:[],campRaw:null,tgt:[],st:[],br:[],pp:[],sync:{campaign:false,targeting:false,search_terms:false,business_report:false,purchased_product:false},lastSync:"",tab:"funnel"};
 const LS={set(k,v){try{localStorage.setItem("sh_"+k,JSON.stringify(v))}catch(e){}},get(k,d){try{const v=localStorage.getItem("sh_"+k);return v?JSON.parse(v):d}catch(e){return d}},clear(){Object.keys(localStorage).filter(k=>k.startsWith("sh_")).forEach(k=>localStorage.removeItem(k))}};
 const pn=s=>{const n=parseFloat(String(s||0).replace(/[,$%]/g,""));return isNaN(n)?0:n};
 const sm=a=>a.reduce((x,y)=>x+y,0);const av=a=>a.length?sm(a)/a.length:0;
@@ -143,7 +143,7 @@ function pctCh(c,p){return p>0?((c-p)/p*100):0}
 
 // ═══ SYNC ═══
 async function syncAll(id){const sync={campaign:false,targeting:false,search_terms:false,business_report:false,purchased_product:false};
-  const c=await loadSheet(id,"campaign");if(c&&c.length){S.camp=parseCamp(c);LS.set("c",S.camp);sync.campaign=true}
+  const c=await loadSheet(id,"campaign");if(c&&c.length){S.campRaw=c[0];LS.set("cRaw",c[0]);S.camp=parseCamp(c);LS.set("c",S.camp);sync.campaign=true}
   const t=await loadSheet(id,"targeting");if(t&&t.length){S.tgt=parseTgt(t);LS.set("t",S.tgt);sync.targeting=true}
   const s=await loadSheet(id,"search_terms");if(s&&s.length){S.st=parseST(s);LS.set("s",S.st);sync.search_terms=true}
   const b=await loadSheet(id,"business_report");if(b&&b.length){S.br=parseBR(b);LS.set("b",S.br);sync.business_report=true}
@@ -569,18 +569,20 @@ function rSettings(el){
   // Diagnostic
   const {date:ld,camps:en}=getLatest();const daily=campByDate(S.camp);
   const sampleCamp=S.camp.length?S.camp[0]:null;
+  const rawCamp=S.campRaw||LS.get("cRaw",null);
   html+=`<div class="card" style="border-color:rgba(6,182,212,0.15)"><div style="font-size:11px;font-weight:700;color:#06B6D4;margin-bottom:6px">🔍 데이터 진단</div>
-    <div style="font-size:9px;color:var(--mt);line-height:1.8;font-family:monospace">
+    <div style="font-size:9px;color:var(--mt);line-height:1.8;font-family:monospace;word-break:break-all">
     campaign 원본행: ${S.camp.length}<br>
-    날짜 수: ${[...new Set(S.camp.map(r=>r.date))].length} (${[...new Set(S.camp.map(r=>r.date))].sort().join(", ").slice(0,80)}...)<br>
+    날짜 수: ${[...new Set(S.camp.map(r=>r.date))].length}<br>
     최신 날짜: "${ld}"<br>
     활성 캠페인: ${en.length}개<br>
     campByDate 결과: ${daily.length}일<br>
     합산 매출: $${sm(daily.map(d=>d.sales)).toFixed(0)}<br>
-    ${sampleCamp?`<br>첫 행 샘플:<br>
-    &nbsp;date="${sampleCamp.date}" name="${sampleCamp.name?.slice(0,30)}"<br>
+    ${sampleCamp?`<br>파싱 결과 첫 행:<br>
+    &nbsp;date="${sampleCamp.date}" name="${(sampleCamp.name||"").slice(0,30)}"<br>
     &nbsp;status="${sampleCamp.status}" sales=${sampleCamp.sales} imp=${sampleCamp.imp}<br>
-    &nbsp;cost=${sampleCamp.cost} purchases=${sampleCamp.purchases}`:""}<br><br>
+    &nbsp;cost=${sampleCamp.cost} purchases=${sampleCamp.purchases}`:""}
+    ${rawCamp?`<br><br><b style="color:#F59E0B">구글시트 원본 헤더:</b><br>${Object.keys(rawCamp).map(k=>`"${k}"`).join(", ")}<br><br><b style="color:#F59E0B">원본 첫 행 값:</b><br>${Object.entries(rawCamp).map(([k,v])=>`${k}: <b>${String(v).slice(0,25)}</b>`).join("<br>")}`:"원본 데이터 없음 — 🔄 동기화하세요"}<br><br>
     business_report: ${S.br.length}행, targeting: ${S.tgt.length}행<br>
     search_terms: ${S.st.length}행, purchased: ${S.pp.length}행
     </div></div>`;
@@ -595,7 +597,7 @@ function showDashboard(){document.getElementById("setup").style.display="none";d
 (function(){
   aiState.result=LS.get("aiR","");aiState.mode=LS.get("aiM","all");
   const id=LS.get("id","");
-  if(id){S.sheetId=id;S.camp=LS.get("c",[]);S.tgt=LS.get("t",[]);S.st=LS.get("s",[]);S.br=LS.get("b",[]);S.pp=LS.get("p",[]);
+  if(id){S.sheetId=id;S.camp=LS.get("c",[]);S.campRaw=LS.get("cRaw",null);S.tgt=LS.get("t",[]);S.st=LS.get("s",[]);S.br=LS.get("b",[]);S.pp=LS.get("p",[]);
     S.sync=LS.get("sync",S.sync);S.lastSync=LS.get("last","");showDashboard();
     syncAll(id).then(()=>{renderHeader();renderTab()})}
   else{document.getElementById("setup").style.display="block"}
