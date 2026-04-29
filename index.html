@@ -268,7 +268,7 @@ function rFunnel(el){
       <div style="text-align:center;padding:6px;border:1px solid var(--bd);border-radius:8px"><div style="font-size:8px;color:var(--mt)">광고 매출비중</div><div style="font-size:13px;font-weight:800;color:#F59E0B">${brT.sales>0?(tSales/brT.sales*100).toFixed(0):0}%</div></div></div></div>`}
 
   // Trend chart (filtered period)
-  if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._fPeriod==="all"?"전체":"최근 "+window._fPeriod+"일"} 추이</div><canvas id="chFT" style="height:160px;width:100%"></canvas></div>`}
+  if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._fPeriod==="all"?"전체":"최근 "+window._fPeriod+"일"} 추이</div><div style="position:relative;height:160px;width:100%"><canvas id="chFT"></canvas></div></div>`}
 
   // Enabled campaigns list
   if(enabled.length){
@@ -320,7 +320,7 @@ function rAds(el){
   html+=`<div class="g2">${kpi("매출","$"+pSales.toFixed(0),"광고비 $"+pCost.toFixed(0),"#10B981")}${kpi("구매",pPur+"건","","#3B82F6")}
     ${kpi("CTR",pCtr.toFixed(2)+"%",pClk.toLocaleString()+"클릭","#8B5CF6")}${kpi("ROAS",pRoas.toFixed(2)+"x","",pRoas<3?"#F59E0B":"#10B981")}</div>`;
 
-  if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._aPeriod==="all"?"전체":"최근 "+window._aPeriod+"일"} 매출 & ACOS</div><canvas id="chAds" style="height:150px;width:100%"></canvas></div>`}
+  if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._aPeriod==="all"?"전체":"최근 "+window._aPeriod+"일"} 매출 & ACOS</div><div style="position:relative;height:160px;width:100%"><canvas id="chAds"></canvas></div></div>`}
   enabled.sort((a,b)=>b.sales-a.sales).forEach(c=>{
     const isExp=expCamp===c.name;const ac=c.acos>1?"#EF4444":c.acos>0.3?"#F59E0B":c.acos>0?"#10B981":"#64748B";
     const p=c.purpose&&PURPOSE_L[c.purpose.toLowerCase()]?PURPOSE_L[c.purpose.toLowerCase()]:null;
