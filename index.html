@@ -76,8 +76,18 @@ const sm=a=>a.reduce((x,y)=>x+y,0);const av=a=>a.length?sm(a)/a.length:0;
 function fixD(d){const m=String(d).match(/Date\((\d+),(\d+),(\d+)\)/);return m?`${m[1]}-${String(+m[2]+1).padStart(2,'0')}-${m[3].padStart(2,'0')}`:String(d).slice(0,10)}
 function pnPct(s){let v=pn(s);if(v>0&&v<=1)v=v*100;return v}
 
-// ═══ PARSERS (trim all keys to handle trailing spaces) ═══
-function getV(r,keys){for(const k of keys){const v=r[k]||r[k.trim()]||r[k+" "];if(v!==undefined&&v!=="")return String(v)}return""}
+// ═══ PARSERS (startsWith matching for headers with guide text) ═══
+function getV(r,keys){
+  // First try exact match
+  for(const k of keys){if(r[k]!==undefined&&r[k]!=="")return String(r[k])}
+  // Then try startsWith match (handles "Date ⬇ 매일 다운..." etc)
+  const rKeys=Object.keys(r);
+  for(const k of keys){
+    const found=rKeys.find(rk=>rk.startsWith(k)||rk.trim().startsWith(k));
+    if(found&&r[found]!==undefined&&r[found]!=="")return String(r[found]);
+  }
+  return"";
+}
 function getN(r,keys){return pn(getV(r,keys))}
 function parseCamp(rows){return rows.map(r=>{
   // Try all possible column name variations
