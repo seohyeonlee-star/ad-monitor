@@ -77,7 +77,7 @@ const sm=a=>a.reduce((x,y)=>x+y,0);const av=a=>a.length?sm(a)/a.length:0;
 function fixD(d){const m=String(d).match(/Date\((\d+),(\d+),(\d+)\)/);return m?`${m[1]}-${String(+m[2]+1).padStart(2,'0')}-${m[3].padStart(2,'0')}`:String(d).slice(0,10)}
 function pnPct(s){let v=pn(s);if(v>0&&v<=1)v=v*100;return v}
 
-// ═══ PARSERS (startsWith matching for headers with guide text) ═══
+// ═══ PARSERS ═══
 function getV(r,keys){
   for(const k of keys){if(r[k]!==undefined&&r[k]!=="")return String(r[k])}
   const rKeys=Object.keys(r);
@@ -194,7 +194,7 @@ function renderTab(){dc();document.querySelectorAll(".section").forEach(s=>s.cla
 function kpi(l,v,sub,c){return`<div class="card kpi"><div class="lb">${l}</div><div class="vl" style="color:${c}">${v}</div>${sub?`<div class="sb">${sub}</div>`:""}</div>`}
 function empty(i,t,d){return`<div class="card" style="text-align:center;padding:28px"><div style="font-size:24px;margin-bottom:8px">${i}</div><div style="font-size:12px;font-weight:700;margin-bottom:6px">${t}</div><div style="font-size:10px;color:var(--mt);line-height:1.6">${d}</div></div>`}
 
-// Helper: get latest date and enabled campaigns (deduplicated by name)
+// Helper
 function getLatest(){
   const dates=[...new Set(S.camp.map(r=>r.date).filter(d=>d&&d!=="none"))].sort();
   const d=dates.length?dates[dates.length-1]:(S.camp.length?S.camp[0].date:"");
@@ -210,7 +210,7 @@ function getLatest(){
 
 // ═══ SHARED PERIOD FILTER ═══
 function periodFilterHTML(prefix){
-  if(!window[prefix])window[prefix]="1";
+  if(!window[prefix])window[prefix]="30"; // 기본값을 30일로 변경
   const custom=window[prefix]==="custom";
   let h=`<div style="display:flex;flex-wrap:wrap;gap:3px;margin:10px 0 6px;align-items:center">
     <div style="display:flex;gap:2px;background:rgba(255,255,255,0.04);border-radius:6px;padding:2px">
@@ -227,7 +227,7 @@ function periodFilterHTML(prefix){
 }
 function filterDaily(daily,prefix){
   if(!daily.length)return[];
-  const p=window[prefix]||"1";
+  const p=window[prefix]||"30";
   if(p==="custom"){
     const from=window[prefix+"From"]||"";const to=window[prefix+"To"]||"";
     return daily.filter(d=>((!from||d.date>=from)&&(!to||d.date<=to)));
@@ -238,7 +238,7 @@ function attrWarning(fDaily){
   if(!fDaily.length)return"";
   const today=new Date().toISOString().slice(0,10);
   const recent=fDaily.filter(d=>{const diff=(new Date(today)-new Date(d.date))/(1000*60*60*24);return diff<8});
-  if(recent.length)return`<div class="alert warn" style="font-size:9px;line-height:1.6">⚠ <b>어트리뷰션 미확정 데이터 포함</b> — 최근 7일 데이터(${recent.length}일)는 아마존의 어트리뷰션 윈도우(SP 7일, SB/SD 14일)에 의해 매출/구매 수치가 소급 변경될 수 있습니다. <b>확정된 성과는 8일 이전 데이터</b>를 기준으로 판단하세요.</div>`;
+  if(recent.length)return`<div class="alert warn" style="font-size:9px;line-height:1.6">⚠ <b>어트리뷰션 미확정 데이터 포함</b> — 최근 데이터는 아마존의 어트리뷰션 윈도우(SP 7일, SB/SD 14일)에 의해 소급 변경될 수 있습니다. <b>확정된 성과는 8일 이전 데이터</b> 기준입니다.</div>`;
   return"";
 }
 
@@ -273,7 +273,7 @@ function rFunnel(el){
   const pCost=sm(fDaily.map(d=>d.cost)),pSales=sm(fDaily.map(d=>d.sales)),pImp=sm(fDaily.map(d=>d.imp)),pClk=sm(fDaily.map(d=>d.clk)),pPur=sm(fDaily.map(d=>d.pur));
   const pCtr=pImp>0?(pClk/pImp*100):0;const pRoas=pCost>0?(pSales/pCost):0;
 
-  html+=`<div style="font-size:9px;color:var(--mt);margin-bottom:6px">${fRange} (${fDaily.length}일)</div>`;
+  html+=`<div style="font-size:9px;color:var(--mt);margin-bottom:6px">${fRange} (${fDaily.length}일 기준 요약)</div>`;
   html+=`<div class="g2">${kpi("매출","$"+pSales.toFixed(0),"광고비 $"+pCost.toFixed(0),"#10B981")}${kpi("구매",pPur+"건","","#3B82F6")}
     ${kpi("CTR",pCtr.toFixed(2)+"%",pClk.toLocaleString()+"클릭","#8B5CF6")}${kpi("ROAS",pRoas.toFixed(2)+"x","",pRoas<3?"#F59E0B":"#10B981")}</div>`;
 
@@ -293,48 +293,65 @@ function rFunnel(el){
         <div style="font-size:15px;font-weight:800;color:${f.c}">${f.v}</div></div></div>`});
 
   // ─────────────────────────────────────────────────────────
-  // 개선된 Total vs Ads (전체 여정 vs 광고 여정 비교)
+  // 개선된 Total vs Ads (전체 여정 vs 광고 여정 비교) - BR 최신 날짜 기준 7일 매칭
   // ─────────────────────────────────────────────────────────
-  const brT={sess:sm(S.br.map(r=>r.sessions)),units:sm(S.br.map(r=>r.units)),sales:sm(S.br.map(r=>r.sales))};
+  // 비즈니스 리포트의 가장 최근 날짜 찾기
+  const brDates = [...new Set(S.br.map(r=>r.date))].sort();
+  const latestBrDate = brDates.length ? brDates[brDates.length-1] : "";
   
-  const adDateMap = {};
-  fDaily.forEach(d => { adDateMap[d.date] = d; });
+  // 최신 BR 날짜 기준 과거 7일의 날짜 목록 생성 (항상 7일 매칭을 보장)
+  const targetDates = [];
+  if (latestBrDate) {
+    const dObj = new Date(latestBrDate);
+    for(let i=0; i<7; i++) {
+      const past = new Date(dObj.getTime());
+      past.setDate(dObj.getDate() - i);
+      targetDates.push(past.toISOString().slice(0,10));
+    }
+  }
+
+  // 전체 캠페인 데이터를 날짜별로 매핑 (필터된 fDaily가 아닌 전체 daily 사용)
+  const allAdDateMap = {};
+  daily.forEach(d => { allAdDateMap[d.date] = d; });
   
   let tSess = 0, tUnits = 0, tTotalSales = 0;
   let aClk = 0, aPur = 0, aTotalSales = 0;
+  let pTraffic = 0, pConv = 0, pRev = 0;
   
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const yesterdayStr = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-
   const validDates = [];
   S.br.forEach(r => {
-    if (adDateMap[r.date]) {
-      // 만약 어제 날짜인데 세션 수가 평소보다 터무니없이 낮다면(불완전 상태) 제외
-      if (r.date === yesterdayStr && r.sessions < (brT?.sess / S.br.length * 0.3)) return; 
-      
+    // BR 데이터의 날짜가 '최근 7일'에 속하고, 동일한 날짜의 캠페인 데이터가 존재할 경우에만
+    if (targetDates.includes(r.date) && allAdDateMap[r.date]) {
       tSess += r.sessions;
       tUnits += r.units;
       tTotalSales += r.sales;
-      validDates.push(r.date);
+      if(!validDates.includes(r.date)) validDates.push(r.date); // 유효 날짜 중복 제거용
     }
   });
 
-  const uniqueValidDates = [...new Set(validDates)];
-  uniqueValidDates.forEach(d => {
-    aClk += adDateMap[d].clk;
-    aPur += adDateMap[d].pur;
-    aTotalSales += adDateMap[d].sales;
+  // 매칭된 유효 날짜(최대 7일)에 대해서만 광고 데이터를 딱 한 번씩 합산
+  validDates.forEach(d => {
+    aClk += allAdDateMap[d].clk;
+    aPur += allAdDateMap[d].pur;
+    aTotalSales += allAdDateMap[d].sales;
   });
 
-  let pTraffic = 0, pConv = 0, pRev = 0;
   if (tSess > 0 && aClk > 0) {
     pTraffic = (aClk / tSess * 100).toFixed(1);
     pConv = (aPur / tUnits * 100).toFixed(1);
     pRev = (aTotalSales / tTotalSales * 100).toFixed(1);
+    
+    // 날짜 표시 포맷 (오름차순이므로 첫값~마지막값)
+    validDates.sort();
+    const brDateRangeStr = validDates.length > 0 
+      ? `${validDates[0]} ~ ${validDates[validDates.length-1]}` 
+      : "데이터 부족";
 
     html += `<div class="card">
       <div style="font-size:12px;font-weight:700;margin-bottom:4px">🔬 통합 구매 여정 (전체 vs 광고)</div>
-      <div style="font-size:9px;color:var(--mt);margin-bottom:12px">동일 기간 매칭 기준 (${uniqueValidDates.length}일) · 비즈니스 리포트 지연 보정됨</div>
+      <div style="font-size:9px;color:var(--mt);margin-bottom:12px">
+        <span style="color:#10B981;font-weight:600">BR 활성 날짜 기준 7일 강제 매칭</span> · (${validDates.length}일 데이터: ${brDateRangeStr})
+      </div>
       
       <div style="display:grid;gap:8px">
         <div>
@@ -391,7 +408,8 @@ function rFunnel(el){
   }
   // ─────────────────────────────────────────────────────────
 
-  if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._fP==="custom"?"기간 설정":"최근 "+(window._fP||"1")+"일"} 추이</div><div style="position:relative;height:160px;width:100%"><canvas id="chFT"></canvas></div></div>`}
+  // 추이 그래프 영역 (필터된 기간 fDaily 사용)
+  if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._fP==="custom"?"기간 설정":"최근 "+(window._fP||"30")+"일"} 추이</div><div style="position:relative;height:160px;width:100%"><canvas id="chFT"></canvas></div></div>`}
 
   if(enabled.length){
     html+=`<div style="font-size:12px;font-weight:700;margin:12px 0 8px">활성 캠페인 (${enabled.length}개)</div>`;
@@ -481,7 +499,7 @@ function rAds(el){
   html+=`<div class="g2">${kpi("매출","$"+pSales.toFixed(0),"광고비 $"+pCost.toFixed(0),"#10B981")}${kpi("구매",pPur+"건","","#3B82F6")}
     ${kpi("CTR",pCtr.toFixed(2)+"%",pClk.toLocaleString()+"클릭","#8B5CF6")}${kpi("ROAS",pRoas.toFixed(2)+"x","",pRoas<3?"#F59E0B":"#10B981")}</div>`;
 
-  if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._aP==="custom"?"기간 설정":"최근 "+(window._aP||"7")+"일"} 매출 & ACOS</div><div style="position:relative;height:160px;width:100%"><canvas id="chAds"></canvas></div></div>`}
+  if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._aP==="custom"?"기간 설정":"최근 "+(window._aP||"30")+"일"} 매출 & ACOS</div><div style="position:relative;height:160px;width:100%"><canvas id="chAds"></canvas></div></div>`}
   enabled.sort((a,b)=>b.sales-a.sales).forEach(c=>{
     const isExp=expCamp===c.name;const ac=c.acos>1?"#EF4444":c.acos>0.3?"#F59E0B":c.acos>0?"#10B981":"#64748B";
     const p=c.purpose&&PURPOSE_L[c.purpose.toLowerCase()]?PURPOSE_L[c.purpose.toLowerCase()]:null;
