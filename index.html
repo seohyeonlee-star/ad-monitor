@@ -210,7 +210,7 @@ function getLatest(){
 
 // ═══ SHARED PERIOD FILTER ═══
 function periodFilterHTML(prefix){
-  if(!window[prefix])window[prefix]="30"; // 기본값을 30일로 변경
+  if(!window[prefix])window[prefix]="30"; 
   const custom=window[prefix]==="custom";
   let h=`<div style="display:flex;flex-wrap:wrap;gap:3px;margin:10px 0 6px;align-items:center">
     <div style="display:flex;gap:2px;background:rgba(255,255,255,0.04);border-radius:6px;padding:2px">
@@ -253,18 +253,73 @@ function rFunnel(el){
   const ctr=tImp>0?(tClk/tImp*100):0;const acos=tSales>0?(tCost/tSales*100):0;const roas=tCost>0?(tSales/tCost):0;
   const avgCVR=av(S.br.filter(r=>r.cvr>0).map(r=>r.cvr));
   const budgetC=enabled.filter(r=>r.status.includes("BUDGET")).length;
-  const wasteKW=S.st.filter(s=>s.spend>0&&s.sales===0);const cross=crossSellAnalysis(S.pp);
+
   let html="";
 
-  if(latest&&prev){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">전일 대비 (${latest.date})</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:10px">
-    <div>매출 $${latest.sales.toFixed(0)} ${chgB(pctCh(latest.sales,prev.sales))}</div>
-    <div>광고비 $${latest.cost.toFixed(0)} ${chgB(pctCh(latest.cost,prev.cost))}</div>
-    <div>구매 ${latest.pur}건 ${chgB(pctCh(latest.pur,prev.pur))}</div></div></div>`}
+  // ─────────────────────────────────────────────────────────
+  // 💡 AI 자동 진단 & 오늘의 할 일 (ROAS 원인 분석, 수확, 낭비 등)
+  // ─────────────────────────────────────────────────────────
+  html += `<div class="card" style="border-left: 4px solid #F59E0B; background: rgba(245, 158, 11, 0.05);">
+    <div style="font-size:13px;font-weight:800;margin-bottom:8px;color:#F59E0B">💡 AI 자동 진단 & 오늘의 할 일</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">`;
 
-  if(budgetC>0)html+=`<div class="alert warn">⚠ ${budgetC}개 캠페인 예산 소진</div>`;
-  if(wasteKW.length>10)html+=`<div class="alert bad">🚨 검색어 ${wasteKW.length}개가 $${sm(wasteKW.map(s=>s.spend)).toFixed(0)} 낭비</div>`;
-  if(cross.length>5)html+=`<div class="alert good">💡 크로스셀 ${cross.length}건 발견</div>`;
+  const sortedCampDates = [...new Set(S.camp.map(r=>r.date).filter(d=>d&&d!=="none"))].sort();
+  if (sortedCampDates.length >= 14) {
+      const recentDates = sortedCampDates.slice(-7);
+      const prevDates = sortedCampDates.slice(-14, -7);
+
+      const rCamp = S.camp.filter(c => recentDates.includes(c.date));
+      const pCamp = S.camp.filter(c => prevDates.includes(c.date));
+
+      const rSpend = sm(rCamp.map(c=>c.cost)), rSales = sm(rCamp.map(c=>c.sales)), rClk = sm(rCamp.map(c=>c.clk));
+      const pSpend = sm(pCamp.map(c=>c.cost)), pSales = sm(pCamp.map(c=>c.sales)), pClk = sm(pCamp.map(c=>c.clk));
+
+      const rRoas = rSpend > 0 ? (rSales/rSpend) : 0;
+      const pRoas = pSpend > 0 ? (pSales/pSpend) : 0;
+      const rCpc = rClk > 0 ? (rSpend/rClk) : 0;
+      const pCpc = pClk > 0 ? (pSpend/pClk) : 0;
+
+      // ROAS Drop Logic
+      if (rRoas < pRoas * 0.85 && pRoas > 0) {
+          html += `<div style="font-size:10px;line-height:1.5"><b style="color:#EF4444">🚨 ROAS 급락 경고:</b> 최근 7일 ROAS가 <b>${pRoas.toFixed(2)}x → ${rRoas.toFixed(2)}x</b>로 크게 하락했습니다.</div>`;
+          // 1. CPC Check
+          if (rCpc > pCpc * 1.1) {
+              html += `<div style="font-size:9px;color:var(--mt);margin-left:12px;margin-top:2px">↳ 💸 <b>원인 1 (CPC 급등):</b> 평균 CPC가 $${pCpc.toFixed(2)}에서 $${rCpc.toFixed(2)}로 올랐습니다. 입찰 경쟁이 심해졌으니 CPC가 비싼 키워드 입찰가를 낮추세요.</div>`;
+          }
+          // 2. CVR Check
+          const rBr = S.br.filter(b => recentDates.includes(b.date));
+          const pBr = S.br.filter(b => prevDates.includes(b.date));
+          const rCvr = sm(rBr.map(b=>b.sessions)) > 0 ? (sm(rBr.map(b=>b.units))/sm(rBr.map(b=>b.sessions))) : 0;
+          const pCvr = sm(pBr.map(b=>b.sessions)) > 0 ? (sm(pBr.map(b=>b.units))/sm(pBr.map(b=>b.sessions))) : 0;
+          if (rCvr < pCvr * 0.85 && pCvr > 0) {
+              html += `<div style="font-size:9px;color:var(--mt);margin-left:12px;margin-top:2px">↳ 📉 <b>원인 2 (CVR 하락):</b> 전체 전환율이 ${(pCvr*100).toFixed(1)}%에서 ${(rCvr*100).toFixed(1)}%로 떨어졌습니다. 가격 경쟁력 상실, 바이박스 변동, 나쁜 리뷰 여부를 즉시 점검하세요.</div>`;
+          }
+      } else if (rRoas > pRoas * 1.15 && pRoas > 0) {
+          html += `<div style="font-size:10px;line-height:1.5"><b style="color:#10B981">✅ ROAS 상승:</b> 최근 7일 ROAS가 <b>${pRoas.toFixed(2)}x → ${rRoas.toFixed(2)}x</b>로 개선되었습니다! 현재 최적화 방향이 유효합니다.</div>`;
+      } else {
+          html += `<div style="font-size:10px;line-height:1.5"><b style="color:#10B981">✅ ROAS 안정:</b> 전주 대비 ROAS(${rRoas.toFixed(2)}x)가 안정적으로 유지되고 있습니다.</div>`;
+      }
+  }
+
+  // Budget Alert
+  if(budgetC>0) html+=`<div style="font-size:10px;line-height:1.5;margin-top:2px"><b style="color:#F59E0B">⚠️ 예산 소진 캠페인:</b> ${budgetC}개 캠페인이 예산에 도달했습니다. ACOS가 목표치 이하라면 스케일업(Scale-up)을 위해 일 예산을 증액하세요.</div>`;
+
+  // Keyword Negation Pipeline
+  const wasteST = S.st.filter(s => s.spend >= 10 && s.sales === 0);
+  if (wasteST.length > 0) {
+      const wSpend = sm(wasteST.map(s=>s.spend));
+      html += `<div style="font-size:10px;line-height:1.5;margin-top:2px"><b style="color:#EF4444">🚫 출혈 검색어 방어:</b> 전환 없이 $10 이상 낭비한 검색어가 ${wasteST.length}개 발견되었습니다. (총 $${wSpend.toFixed(0)} 출혈) <span style="color:var(--ac);cursor:pointer;font-weight:700" onclick="S.tab='ads';renderTabs();renderTab()">[광고 탭에서 네거티브 추가]</span></div>`;
+  }
+  
+  // Keyword Harvesting Pipeline
+  const harvestST = S.st.filter(s => s.orders >= 3 && s.acos > 0 && s.acos < 30);
+  if (harvestST.length > 0) {
+      html += `<div style="font-size:10px;line-height:1.5;margin-top:2px"><b style="color:#8B5CF6">🌾 키워드 수확(Harvesting):</b> 주문 3건 이상, ACOS 30% 이하인 고효율 검색어가 ${harvestST.length}개 대기 중입니다. Exact 매치 캠페인으로 단독 분리하여 점유율(TOS)을 극대화하세요.</div>`;
+  }
+
+  html += `</div></div>`;
+
+  // ─────────────────────────────────────────────────────────
 
   html+=periodFilterHTML("_fP");
   let fDaily=filterDaily(daily,"_fP");
@@ -293,13 +348,11 @@ function rFunnel(el){
         <div style="font-size:15px;font-weight:800;color:${f.c}">${f.v}</div></div></div>`});
 
   // ─────────────────────────────────────────────────────────
-  // 개선된 Total vs Ads (전체 여정 vs 광고 여정 비교) - BR 최신 날짜 기준 7일 매칭
+  // 개선된 Total vs Ads (전체 여정 vs 광고 여정 비교) & TACoS
   // ─────────────────────────────────────────────────────────
-  // 비즈니스 리포트의 가장 최근 날짜 찾기
   const brDates = [...new Set(S.br.map(r=>r.date))].sort();
   const latestBrDate = brDates.length ? brDates[brDates.length-1] : "";
   
-  // 최신 BR 날짜 기준 과거 7일의 날짜 목록 생성 (항상 7일 매칭을 보장)
   const targetDates = [];
   if (latestBrDate) {
     const dObj = new Date(latestBrDate);
@@ -310,54 +363,52 @@ function rFunnel(el){
     }
   }
 
-  // 전체 캠페인 데이터를 날짜별로 매핑 (필터된 fDaily가 아닌 전체 daily 사용)
   const allAdDateMap = {};
   daily.forEach(d => { allAdDateMap[d.date] = d; });
   
   let tSess = 0, tUnits = 0, tTotalSales = 0;
-  let aClk = 0, aPur = 0, aTotalSales = 0;
-  let pTraffic = 0, pConv = 0, pRev = 0;
+  let aClk = 0, aPur = 0, aTotalSales = 0, aTotalCost = 0;
+  let pTraffic = 0, pConv = 0, pRev = 0, tacos = 0;
   
   const validDates = [];
   S.br.forEach(r => {
-    // BR 데이터의 날짜가 '최근 7일'에 속하고, 동일한 날짜의 캠페인 데이터가 존재할 경우에만
     if (targetDates.includes(r.date) && allAdDateMap[r.date]) {
       tSess += r.sessions;
       tUnits += r.units;
       tTotalSales += r.sales;
-      if(!validDates.includes(r.date)) validDates.push(r.date); // 유효 날짜 중복 제거용
+      if(!validDates.includes(r.date)) validDates.push(r.date); 
     }
   });
 
-  // 매칭된 유효 날짜(최대 7일)에 대해서만 광고 데이터를 딱 한 번씩 합산
   validDates.forEach(d => {
     aClk += allAdDateMap[d].clk;
     aPur += allAdDateMap[d].pur;
     aTotalSales += allAdDateMap[d].sales;
+    aTotalCost += allAdDateMap[d].cost;
   });
 
   if (tSess > 0 && aClk > 0) {
     pTraffic = (aClk / tSess * 100).toFixed(1);
     pConv = (aPur / tUnits * 100).toFixed(1);
     pRev = (aTotalSales / tTotalSales * 100).toFixed(1);
+    tacos = (tTotalSales > 0) ? (aTotalCost / tTotalSales * 100).toFixed(1) : 0;
     
-    // 날짜 표시 포맷 (오름차순이므로 첫값~마지막값)
     validDates.sort();
     const brDateRangeStr = validDates.length > 0 
       ? `${validDates[0]} ~ ${validDates[validDates.length-1]}` 
       : "데이터 부족";
 
     html += `<div class="card">
-      <div style="font-size:12px;font-weight:700;margin-bottom:4px">🔬 통합 구매 여정 (전체 vs 광고)</div>
+      <div style="font-size:12px;font-weight:700;margin-bottom:4px">🔬 통합 구매 여정 및 진성 수익성 (TACoS)</div>
       <div style="font-size:9px;color:var(--mt);margin-bottom:12px">
-        <span style="color:#10B981;font-weight:600">BR 활성 날짜 기준 7일 강제 매칭</span> · (${validDates.length}일 데이터: ${brDateRangeStr})
+        <span style="color:#10B981;font-weight:600">BR 최근 7일 매칭</span> · (${validDates.length}일 데이터: ${brDateRangeStr})
       </div>
       
       <div style="display:grid;gap:8px">
         <div>
           <div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:3px">
             <span>👁 유입 (세션 vs 클릭)</span>
-            <span style="color:#3B82F6;font-weight:700">광고 기여도 ${pTraffic}%</span>
+            <span style="color:#3B82F6;font-weight:700">광고 점유율 ${pTraffic}%</span>
           </div>
           <div style="height:14px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;position:relative">
             <div style="position:absolute;left:0;top:0;height:100%;width:100%;background:rgba(100,116,139,0.3)"></div>
@@ -372,7 +423,7 @@ function rFunnel(el){
         <div>
           <div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:3px">
             <span>🛒 전환 (판매 단위 vs 광고 구매)</span>
-            <span style="color:#8B5CF6;font-weight:700">광고 기여도 ${pConv}%</span>
+            <span style="color:#8B5CF6;font-weight:700">광고 점유율 ${pConv}%</span>
           </div>
           <div style="height:14px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;position:relative">
             <div style="position:absolute;left:0;top:0;height:100%;width:100%;background:rgba(100,116,139,0.3)"></div>
@@ -386,29 +437,29 @@ function rFunnel(el){
 
         <div>
           <div style="display:flex;justify-content:space-between;font-size:9px;margin-bottom:3px">
-            <span>💰 매출</span>
-            <span style="color:#10B981;font-weight:700">광고 기여도 ${pRev}%</span>
+            <span>💰 매출 및 <span style="color:#F59E0B">TACoS</span> (진성 마진율 추적)</span>
+            <span style="color:#10B981;font-weight:700">광고 점유율 ${pRev}%</span>
           </div>
           <div style="height:14px;background:rgba(255,255,255,0.05);border-radius:4px;overflow:hidden;position:relative">
             <div style="position:absolute;left:0;top:0;height:100%;width:100%;background:rgba(100,116,139,0.3)"></div>
             <div style="position:absolute;left:0;top:0;height:100%;width:${pRev}%;background:#10B981"></div>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--mt);margin-top:2px">
-            <span>총 $${tTotalSales.toLocaleString(undefined, {maximumFractionDigits:0})}</span>
-            <span>광고 $${aTotalSales.toLocaleString(undefined, {maximumFractionDigits:0})}</span>
+            <span>총매출 $${tTotalSales.toLocaleString(undefined, {maximumFractionDigits:0})}</span>
+            <span>광고매출 $${aTotalSales.toLocaleString(undefined, {maximumFractionDigits:0})} / <b style="color:#F59E0B;font-size:9px">TACoS ${tacos}%</b></span>
           </div>
         </div>
       </div>
       
       <div style="margin-top:16px;border-top:1px solid var(--bd);padding-top:12px;">
-        <div style="font-size:10px;font-weight:600;margin-bottom:8px">📈 광고 기여도(Ad Dependency) 퍼널 구조</div>
+        <div style="font-size:10px;font-weight:600;margin-bottom:8px">📈 광고 점유율(Ad Dependency) 구조</div>
         <div style="position:relative;height:140px;width:100%"><canvas id="chDependency"></canvas></div>
       </div>
     </div>`;
   }
   // ─────────────────────────────────────────────────────────
 
-  // 추이 그래프 영역 (필터된 기간 fDaily 사용)
+  // 추이 그래프 영역 
   if(fDaily.length>1){html+=`<div class="card"><div style="font-size:11px;font-weight:700;margin-bottom:8px">${window._fP==="custom"?"기간 설정":"최근 "+(window._fP||"30")+"일"} 추이</div><div style="position:relative;height:160px;width:100%"><canvas id="chFT"></canvas></div></div>`}
 
   if(enabled.length){
@@ -423,19 +474,6 @@ function rFunnel(el){
           <div style="text-align:right"><div style="font-size:12px;font-weight:700;color:#10B981">$${c.sales.toFixed(0)}</div>
             <div style="font-size:9px;color:${ac}">ACOS ${(c.acos*100).toFixed(0)}%</div></div></div></div>`});
   }
-  if(S.prompts.length){
-    const topP=S.prompts.slice().sort((a,b)=>b.imp-a.imp).slice(0,5);
-    const gImp=sm(S.prompts.map(p=>p.imp));const gClk=sm(S.prompts.map(p=>p.clk));const gCtr=gImp>0?(gClk/gImp*100):0;
-    html+=`<div class="card" style="border-color:rgba(6,182,212,0.15)"><div style="font-size:12px;font-weight:700;color:#06B6D4;margin-bottom:6px">🤖 GEO (Rufus AI 추천)</div>
-      <div style="font-size:9px;color:var(--mt);margin-bottom:8px">아마존 AI가 고객에게 추천할 때 사용하는 질문. CTR 낮으면 리스팅 키워드 강화 필요</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px">
-        <div style="text-align:center;padding:5px;background:#06B6D410;border-radius:6px"><div style="font-size:8px;color:var(--mt)">AI노출</div><div style="font-size:12px;font-weight:800;color:#06B6D4">${gImp.toLocaleString()}</div></div>
-        <div style="text-align:center;padding:5px;background:#06B6D410;border-radius:6px"><div style="font-size:8px;color:var(--mt)">AI CTR</div><div style="font-size:12px;font-weight:800;color:${gCtr<0.3?"#EF4444":"#06B6D4"}">${gCtr.toFixed(2)}%</div></div>
-        <div style="text-align:center;padding:5px;background:#06B6D410;border-radius:6px"><div style="font-size:8px;color:var(--mt)">질문</div><div style="font-size:12px;font-weight:800;color:#06B6D4">${S.prompts.length}</div></div></div>`;
-    topP.forEach(p=>{const pc=p.imp>0?(p.clk/p.imp*100):0;
-      html+=`<div style="padding:5px 0;border-bottom:1px solid var(--bd)"><div style="font-size:10px;color:var(--tx)">"${p.prompt.slice(0,70)}${p.prompt.length>70?"...":""}"</div>
-        <div style="font-size:9px;color:var(--mt)">노출 ${p.imp.toLocaleString()} · CTR ${pc.toFixed(2)}%${p.sales>0?" · $"+p.sales.toFixed(0):""}${pc<0.3?' <span style="color:#EF4444">→ 리스팅 키워드 추가</span>':""}</div></div>`});
-    html+=`</div>`}
   
   el.innerHTML=html;
 
