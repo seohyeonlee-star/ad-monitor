@@ -161,6 +161,24 @@ function chgB(v,inv){const val=inv?v*-1:v;if(Math.abs(val)<0.5)return'';return`<
 function pctCh(c,p){return p>0?((c-p)/p*100):0}
 
 // ═══ SYNC ═══
+// ═══ DATA.JSON PUSH LOADER ═══
+async function syncFromDataJson(){try{
+  const r=await fetch('./data.json?_='+Date.now());
+  if(!r.ok)return false;
+  const d=await r.json();
+  if(!d||!Array.isArray(d.campaign)||!d.campaign.length)return false;
+  if(d.campaign?.length){S.campRaw=d.campaign[0];LS.set("cRaw",d.campaign[0]);S.camp=parseCamp(d.campaign);LS.set("c",S.camp);S.sync.campaign=true}
+  if(d.targeting?.length){S.tgt=parseTgt(d.targeting);LS.set("t",S.tgt);S.sync.targeting=true}
+  if(d.search_terms?.length){S.st=parseST(d.search_terms);LS.set("s",S.st);S.sync.search_terms=true}
+  if(d.business_report?.length){S.br=parseBR(d.business_report);LS.set("b",S.br);S.sync.business_report=true}
+  if(d.purchased_product?.length){S.pp=parsePP(d.purchased_product);LS.set("p",S.pp);S.sync.purchased_product=true}
+  if(d.action_log?.length){S.actions=parseActions(d.action_log);LS.set("al",S.actions);S.sync.action_log=true}
+  if(d.prompts?.length){S.prompts=parsePrompts(d.prompts);LS.set("pr",S.prompts);S.sync.prompts=true}
+  S.lastSync=(d.lastUpdated?new Date(d.lastUpdated).toLocaleString("ko-KR"):new Date().toLocaleString("ko-KR"))+" ❖ 자동";
+  S.sync.action_log=!!d.action_log?.length;
+  LS.set("sync",S.sync);LS.set("last",S.lastSync);return true;
+}catch(e){console.warn("data.json load failed:",e);return false}}
+
 async function syncAll(id){const sync={campaign:false,targeting:false,search_terms:false,business_report:false,purchased_product:false};
   const c=await loadSheet(id,"campaign");if(c&&c.length){S.campRaw=c[0];LS.set("cRaw",c[0]);S.camp=parseCamp(c);LS.set("c",S.camp);sync.campaign=true}
   const t=await loadSheet(id,"targeting");if(t&&t.length){S.tgt=parseTgt(t);LS.set("t",S.tgt);sync.targeting=true}
@@ -176,8 +194,9 @@ async function handleConnect(){const url=document.getElementById("sheetInput").v
   await syncAll(S.sheetId);btn.disabled=false;btn.textContent="구글시트 연결";showDashboard()}
 async function handleRefresh(){const btn=document.getElementById("refreshBtn");
   btn.innerHTML='<span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span>';
-  await syncAll(S.sheetId);btn.textContent="🔄 동기화";renderHeader();renderTab()}
-
+  const ok=await syncFromDataJson();
+  if(!ok&&S.sheetId)await syncAll(S.sheetId);
+  btn.textContent="🔄 동기화";renderHeader();renderTab()}
 // ═══ RENDER CORE ═══
 let charts={};function dc(){Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}});charts={}}
 const PURPOSE_L={launch:{l:"🚀런칭",c:"#8B5CF6"},bestseller:{l:"👑베셀",c:"#F59E0B"},clearance:{l:"🏷️정리",c:"#EC4899"},conquest:{l:"🎯공략",c:"#06B6D4"},seasonal:{l:"📅시즌",c:"#F97316"},defense:{l:"🛡️방어",c:"#3B82F6"}};
@@ -1094,11 +1113,16 @@ function rSettings(el){
 function showDashboard(){document.getElementById("setup").style.display="none";document.getElementById("dashboard").style.display="block";renderHeader();renderTabs();renderTab()}
 (function(){
   aiState.result=LS.get("aiR","");aiState.mode=LS.get("aiM","all");
-  const id=LS.get("id","");
-  if(id){S.sheetId=id;S.camp=LS.get("c",[]);S.campRaw=LS.get("cRaw",null);S.tgt=LS.get("t",[]);S.st=LS.get("s",[]);S.br=LS.get("b",[]);S.pp=LS.get("p",[]);S.actions=LS.get("al",[]);S.prompts=LS.get("pr",[]);
-    S.sync=LS.get("sync",S.sync);S.lastSync=LS.get("last","");showDashboard();
-    syncAll(id).then(()=>{renderHeader();renderTab()})}
-  else{document.getElementById("setup").style.display="block"}
+  const id=LS.get("id","");const hasCached=LS.get("c",[]).length>0;
+  // 1. 캐시된 데이터로 즉시 렌더
+  if(hasCached||id){S.sheetId=id;S.camp=LS.get("c",[]);S.campRaw=LS.get("cRaw",null);S.tgt=LS.get("t",[]);S.st=LS.get("s",[]);S.br=LS.get("b",[]);S.pp=LS.get("p",[]);S.actions=LS.get("al",[]);S.prompts=LS.get("pr",[]);
+    S.sync=LS.get("sync",S.sync);S.lastSync=LS.get("last","");showDashboard();}
+  // 2. data.json 우선 로드 → 실패시 Sheets 직접 연결 fallback
+  syncFromDataJson().then(ok=>{
+    if(ok){showDashboard();renderHeader();renderTab();}
+    else if(id){syncAll(id).then(()=>{renderHeader();renderTab();});}
+    else if(!hasCached){document.getElementById("setup").style.display="block";}
+  });
 })();
 </script>
 </body>
